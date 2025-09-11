@@ -36,6 +36,8 @@ class WorkManager:
         self.config = config
         self.completed: set[int] = set()
         self.private: set[int] = set()
+        self.assigned: set[int] = set()
+        self.next_id: int = 0
         self.lock = threading.Lock()
         self.load_completed_work()
 
@@ -60,43 +62,46 @@ class WorkManager:
                             self.private.add(int(line))
                         except ValueError:
                             pass
+        
+        # Find the next ID to assign based on completed/private work
+        self.next_id = self.config.start_id
+        while self.next_id in self.completed or self.next_id in self.private:
+            self.next_id += 1
 
-    def get_work_batch(self, batch_size: int = 100) -> list[int]:
-        """Get a batch of work IDs to scrape"""
+    def get_work_batch(self, batch_size: int = 1000) -> list[int]:
+        """Get a batch of work IDs to scrape."""
         with self.lock:
-            all_processed = self.completed.union(self.private)
             pending = []
-
-            current_id = self.config.start_id
-            while len(pending) < batch_size and current_id <= self.config.end_id:
-                if current_id not in all_processed:
-                    pending.append(current_id)
-                current_id += 1
+            
+            while len(pending) < batch_size and self.next_id <= self.config.end_id:
+                if not ((self.next_id in self.completed) or (self.next_id in self.private) or (self.next_id in self.assigned)):
+                    pending.append(self.next_id)
+                    self.assigned.add(self.next_id)
+                self.next_id += 1
 
             return pending
-
-    def mark_completed(self, work_id: int):
-        """Mark work as completed and add to public.txt"""
-        with self.lock:
-            if work_id not in self.completed:
-                self.completed.add(work_id)
-                with open(self.config.public_file, 'a') as f:
-                    f.write(f"{work_id}\n")
 
     def mark_private(self, work_id: int):
         """Mark work as private and add to private.txt"""
         with self.lock:
             if work_id not in self.private:
                 self.private.add(work_id)
+                self.assigned.discard(work_id)  # Remove from assigned set
                 with open(self.config.private_file, 'a') as f:
                     f.write(f"{work_id}\n")
 
     def save_work_data(self, work_data: WorkData):
-        """Save work data to results.jsonl"""
+        """Save work data to results.jsonl and public.txt"""
         with self.lock:
+            work_id = int(work_data.id)
             with open(self.config.results_file, 'a') as f:
                 json.dump(work_data.model_dump(), f)
                 f.write('\n')
+            if work_id not in self.completed:
+                self.completed.add(work_id)
+                self.assigned.discard(work_id)  # Remove from assigned set
+                with open(self.config.public_file, 'a') as f:
+                    f.write(f"{work_id}\n")
 
 # Global instances
 config: Config = None # type: ignore
@@ -112,10 +117,8 @@ def get_work_batch(batch_size: int = 100):
 def submit_completed_work(work_data: WorkData):
     """Submit completed work data"""
     try:
-        work_id = int(work_data.id)
         work_manager.save_work_data(work_data)
-        work_manager.mark_completed(work_id)
-        return {"status": "success", "message": f"Work {work_id} saved successfully"}
+        return {"status": "success", "message": f"Work {int(work_data.id)} saved successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving work: {str(e)}")
 
@@ -125,8 +128,8 @@ def submit_private_work(work_id: int):
     work_manager.mark_private(work_id)
     return {"status": "success", "message": f"Work {work_id} marked as private"}
 
-@app.get("/stats")
-def get_stats():
+@app.get("/progress")
+def get_progress():
     """Get current scraping statistics"""
     total_completed = len(work_manager.completed)
     total_private = len(work_manager.private)
