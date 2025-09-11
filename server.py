@@ -65,12 +65,12 @@ class WorkManager:
                             self.private.add(int(line))
                         except ValueError:
                             pass
-        
+
         # Find the next ID to assign based on completed/private work
         self.next_id = self.config.start_id
         while self.next_id in self.completed or self.next_id in self.private:
             self.next_id += 1
-        
+
         # Initialize queue tracking
         self.last_queued_id = self.next_id - 1
 
@@ -78,13 +78,13 @@ class WorkManager:
         """Populate the available queue with up to 10k new work IDs"""
         chunk_size = 10000
         end_id = min(self.last_queued_id + chunk_size, self.config.end_id)
-        
+
         current_id = self.last_queued_id + 1
         while current_id <= end_id:
             if not ((current_id in self.completed) or (current_id in self.private) or (current_id in self.assigned)):
                 self.available_queue.append(current_id)
             current_id += 1
-            
+
         self.last_queued_id = end_id
 
     def get_work_batch(self, batch_size: int = 1000) -> list[int]:
@@ -93,7 +93,7 @@ class WorkManager:
             # Refill queue if running low
             if len(self.available_queue) < 1000 and self.last_queued_id < self.config.end_id:
                 self._populate_queue()
-            
+
             # Get batch from queue
             pending = []
             for _ in range(min(batch_size, len(self.available_queue))):

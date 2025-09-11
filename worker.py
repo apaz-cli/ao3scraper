@@ -58,41 +58,18 @@ class AO3Scraper:
 
         while True:
             try:
-                # First check if resource exists
-                head_response = self.session.head(url)
-
-                if head_response.status_code == 429:
-                    retry_after = int(head_response.headers.get('retry-after', 300))
-                    print(f"ID {work_id}: Rate limited (429) - Retrying after {retry_after}s")
-                    time.sleep(retry_after)
-                    continue
-
-                if head_response.status_code == 503:
-                    retry_after = int(head_response.headers.get('retry-after', 300))
-                    print(f"ID {work_id}: Service unavailable (503) - Retrying after {retry_after}s")
-                    time.sleep(retry_after)
-                    continue
-
-                if head_response.status_code == 404:
-                    print(f"ID {work_id}: Private/Not found (404)")
-                    return None
-
-                if head_response.status_code != 200:
-                    print(f"ID {work_id}: HEAD request failed with status {head_response.status_code}")
-                    return None
-
-                # Get the actual content
+                # Get the content directly
                 response = self.session.get(url)
 
                 if response.status_code == 429:
                     retry_after = int(response.headers.get('retry-after', 300))
-                    print(f"ID {work_id}: Rate limited (429) during GET - Retrying after {retry_after}s")
+                    print(f"ID {work_id}: Rate limited (429) - Retrying after {retry_after}s")
                     time.sleep(retry_after)
                     continue
 
                 if response.status_code == 503:
                     retry_after = int(response.headers.get('retry-after', 300))
-                    print(f"ID {work_id}: Service unavailable (503) during GET - Retrying after {retry_after}s")
+                    print(f"ID {work_id}: Service unavailable (503) - Retrying after {retry_after}s")
                     time.sleep(retry_after)
                     continue
 
@@ -101,7 +78,7 @@ class AO3Scraper:
                     return None
 
                 if response.status_code != 200:
-                    print(f"ID {work_id}: GET request failed with status {response.status_code}")
+                    print(f"ID {work_id}: Request failed with status {response.status_code}")
                     time.sleep(1)
                     continue
 
@@ -179,10 +156,63 @@ class AO3Scraper:
                     else:
                         metadata[current_tag] = elem.get_text(strip=True)
 
+        # Parse series information if available
+        series_name = ""
+        series_id = 0
+        series_number = 0
+
+        # Extract series info from the original HTML element
+        series_dd = tags_section.find('dt', string='Series:') if tags_section else None
+        if series_dd:
+            series_dd = series_dd.find_next_sibling('dd')
+            if series_dd:
+                series_data = self.parse_metadata_content(series_dd, 'series')
+                series_name = series_data['name']
+                series_id = series_data['id']
+                series_number = series_data['number']
+
+        metadata['series_name'] = series_name
+        metadata['series_id'] = series_id
+        metadata['series_number'] = series_number
+
+        # Extract summary
+        summary = ""
+        summary_section = soup.find('div', class_='meta')
+        if summary_section:
+            # Look for "Summary" text followed by blockquote
+            summary_p = summary_section.find('p', string='Summary')
+            if summary_p:
+                summary_blockquote = summary_p.find_next_sibling('blockquote', class_='userstuff')
+                if summary_blockquote:
+                    summary = str(summary_blockquote)
+        metadata['summary'] = summary
+
+        # Extract start notes (chapter notes in preface)
+        start_notes = ""
+        start_notes_p = soup.find('p', string='Notes')
+        if start_notes_p:
+            start_notes_blockquote = start_notes_p.find_next_sibling('blockquote', class_='userstuff')
+            if start_notes_blockquote:
+                start_notes = str(start_notes_blockquote)
+        metadata['start_notes'] = start_notes
+
+        # Extract end notes (from afterword section)
+        end_notes = ""
+        afterword = soup.find('div', id='afterword')
+        if afterword:
+            endnotes_div = afterword.find('div', id='endnotes')
+            if endnotes_div:
+                end_notes_p = endnotes_div.find('p', string='End Notes')
+                if end_notes_p:
+                    end_notes_blockquote = end_notes_p.find_next_sibling('blockquote', class_='userstuff')
+                    if end_notes_blockquote:
+                        end_notes = str(end_notes_blockquote)
+        metadata['end_notes'] = end_notes
+
         # Parse stats if available
         if 'Stats' in metadata:
             stats = metadata.pop('Stats')
-            stats_data = self.parse_stats(stats)
+            stats_data = self.parse_metadata_content(stats, 'stats')
             metadata.update(stats_data)
 
         # Extract chapters
@@ -196,7 +226,7 @@ class AO3Scraper:
                 # Look for meta divs with headings (alternative chapter structure)
                 meta_divs = chapters_div.find_all('div', class_='meta') # type: ignore
                 userstuff_divs = chapters_div.find_all('div', class_='userstuff') # type: ignore
-                
+
                 if meta_divs and len(userstuff_divs) > 1:
                     # Multi-chapter work with meta/userstuff structure
                     chapter_index = 0
@@ -207,10 +237,28 @@ class AO3Scraper:
                             chapter_title = heading.get_text(strip=True)
                             content_div = userstuff_divs[chapter_index]
                             content = str(content_div)
+
+                            # Extract chapter start/end notes from meta_div
+                            chapter_start_notes = ""
+                            notes_section = meta_div.find('div', class_='summary') or meta_div.find('div', class_='notes')
+                            if notes_section:
+                                blockquote = notes_section.find('blockquote', class_='userstuff')
+                                if blockquote:
+                                    chapter_start_notes = str(blockquote)
+
+                            chapter_end_notes = ""
+                            endnotes = meta_div.find('div', class_='endnotes')
+                            if endnotes:
+                                blockquote = endnotes.find('blockquote', class_='userstuff')
+                                if blockquote:
+                                    chapter_end_notes = str(blockquote)
+
                             if content:
                                 chapters.append({
                                     "title": chapter_title,
-                                    "text": content
+                                    "text": content,
+                                    "start_notes": chapter_start_notes,
+                                    "end_notes": chapter_end_notes
                                 })
                                 chapter_index += 1
                 elif userstuff_divs:
@@ -219,7 +267,9 @@ class AO3Scraper:
                     if content:
                         chapters.append({
                             "title": "Chapter 1",
-                            "text": content
+                            "text": content,
+                            "start_notes": "",
+                            "end_notes": ""
                         })
             else:
                 # Multi-chapter work with standard div.chapter structure
@@ -229,12 +279,30 @@ class AO3Scraper:
                     chapter_title = title_elem.get_text(strip=True) if title_elem else f"Chapter {i}"
 
                     content_div = chapter_div.find('div', class_='userstuff') # type: ignore
+
+                    # Extract chapter start/end notes
+                    chapter_start_notes = ""
+                    notes_section = chapter_div.find('div', class_='summary') or chapter_div.find('div', class_='notes')
+                    if notes_section:
+                        blockquote = notes_section.find('blockquote', class_='userstuff')
+                        if blockquote:
+                            chapter_start_notes = str(blockquote)
+
+                    chapter_end_notes = ""
+                    endnotes = chapter_div.find('div', class_='endnotes')
+                    if endnotes:
+                        blockquote = endnotes.find('blockquote', class_='userstuff')
+                        if blockquote:
+                            chapter_end_notes = str(blockquote)
+
                     if content_div:
                         content = str(content_div)
                         if content:
                             chapters.append({
                                 "title": chapter_title,
-                                "text": content
+                                "text": content,
+                                "start_notes": chapter_start_notes,
+                                "end_notes": chapter_end_notes
                             })
 
         # Remove title from metadata since it's at top level
@@ -242,24 +310,57 @@ class AO3Scraper:
 
         return metadata, chapters
 
-    def parse_stats(self, stats: str) -> dict[str, str]:
-        """Parse stats string into structured data"""
-        result = {}
-        clean_stats = re.sub(r'\s+', ' ', stats)
+    def parse_metadata_content(self, content, content_type: str):
+        """Parse stats string or series element into structured data"""
+        if content_type == 'stats':
+            result = {}
+            clean_stats = re.sub(r'\s+', ' ', content)
 
-        patterns = {
-            'published': r'Published:\s*(\d{4}-\d{2}-\d{2})',
-            'completed': r'Completed:\s*(\d{4}-\d{2}-\d{2})',
-            'words': r'Words:\s*([\d,]+)',
-            'chapters': r'Chapters:\s*(\d+/\?|\d+/\d+)'
-        }
+            patterns = {
+                'published': r'Published:\s*(\d{4}-\d{2}-\d{2})',
+                'completed': r'Completed:\s*(\d{4}-\d{2}-\d{2})',
+                'words': r'Words:\s*([\d,]+)',
+                'chapters': r'Chapters:\s*(\d+/\?|\d+/\d+)'
+            }
 
-        for key, pattern in patterns.items():
-            match = re.search(pattern, clean_stats)
-            if match:
-                result[key] = match.group(1)
+            for key, pattern in patterns.items():
+                match = re.search(pattern, clean_stats)
+                if match:
+                    result[key] = match.group(1)
 
-        return result
+            return result
+
+        elif content_type == 'series':
+            result = {
+                'name': '',
+                'id': 0,
+                'number': 0
+            }
+
+            # Get the full text content
+            series_text = content.get_text(strip=True)
+
+            # Parse "Part X of Series Name" format
+            # Example: "Part 1 of Regender of Evangelion"
+            part_match = re.search(r'Part\s+(\d+)\s+of\s+(.+)', series_text)
+            if part_match:
+                result['number'] = int(part_match.group(1))
+
+                # Get series name and ID from the link
+                series_link = content.find('a')
+                if series_link:
+                    result['name'] = series_link.get_text(strip=True)
+
+                    # Extract series ID from href
+                    href = series_link.get('href', '')
+                    series_id_match = re.search(r'/series/(\d+)', href)
+                    if series_id_match:
+                        result['id'] = int(series_id_match.group(1))
+                else:
+                    # Fallback to text parsing if no link found
+                    result['name'] = part_match.group(2).strip()
+
+            return result
 
     def run(self):
         """Main worker loop"""
