@@ -12,7 +12,6 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import aiofiles
 import aiohttp
-import aiosocks
 from bs4 import BeautifulSoup
 
 
@@ -29,12 +28,7 @@ class Config:
     start_id: int = 1
     end_id: int = 100000
     batch_size: int = 10000
-    concurrent: int = 4
-    retries: int = 5
-    proxy_file: str = "proxy.txt"
     output_dir: str = "output"
-    use_proxies: bool = False
-    timeout: int = 60
     base_url: str = "https://download.archiveofourown.org/downloads"
     user_agent: str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     progress_file: str = "progress.json"
@@ -82,66 +76,10 @@ class ProgressTracker:
         return [i for i in range(start, end + 1) if not self.is_completed(i)]
 
 
-class ProxyManager:
-    def __init__(self, proxy_file: str = None):
-        self.proxies = []
-        self.current_idx = 0
-        self.bad_proxies = {}  # proxy_idx -> cooldown_time
-        if proxy_file:
-            self.load_proxies(proxy_file)
-
-    def load_proxies(self, filename: str):
-        try:
-            with open(filename) as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        parts = line.split(':')
-                        if len(parts) >= 2:
-                            self.proxies.append({
-                                'host': parts[0],
-                                'port': int(parts[1]),
-                                'username': parts[2] if len(parts) > 2 else None,
-                                'password': parts[3] if len(parts) > 3 else None
-                            })
-            print(f"Loaded {len(self.proxies)} proxies")
-        except Exception as e:
-            print(f"Could not load proxies: {e}")
-
-    def mark_proxy_bad(self, proxy_idx: int):
-        if proxy_idx >= 0:
-            self.bad_proxies[proxy_idx] = time.time() + 60  # 1 minute cooldown
-
-    def get_next_proxy(self):
-        if not self.proxies:
-            return None, -1
-
-        # Clean expired bad proxies
-        now = time.time()
-        self.bad_proxies = {k: v for k, v in self.bad_proxies.items() if v > now}
-
-        # Find next available proxy
-        start_idx = self.current_idx
-        while True:
-            if self.current_idx not in self.bad_proxies:
-                proxy = self.proxies[self.current_idx]
-                proxy_idx = self.current_idx
-                self.current_idx = (self.current_idx + 1) % len(self.proxies)
-                return proxy, proxy_idx
-
-            self.current_idx = (self.current_idx + 1) % len(self.proxies)
-            if self.current_idx == start_idx:  # All proxies are bad
-                proxy = self.proxies[self.current_idx]
-                proxy_idx = self.current_idx
-                self.current_idx = (self.current_idx + 1) % len(self.proxies)
-                return proxy, proxy_idx
-
-
 class Downloader:
     def __init__(self, config: Config):
         self.config = config
         self.progress = ProgressTracker(config)
-        self.proxy_manager = ProxyManager(config.proxy_file if config.use_proxies else None)
         self.session = None
 
     async def __aenter__(self):
@@ -150,35 +88,17 @@ class Downloader:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         pass
 
-    async def create_fresh_session(self, proxy: Optional[Dict] = None) -> aiohttp.ClientSession:
-        timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+    async def create_fresh_session(self) -> aiohttp.ClientSession:
         ssl_context = ssl.create_default_context()
 
-        if proxy:
-            try:
-                connector = aiosocks.ProxyConnector(
-                    proxy_type=aiosocks.ProxyType.SOCKS5,
-                    host=proxy['host'],
-                    port=proxy['port'],
-                    username=proxy.get('username'),
-                    password=proxy.get('password')
-                )
-            except Exception:
-                connector = aiohttp.TCPConnector(
-                    ssl=ssl_context,
-                    limit=1,
-                    limit_per_host=1,
-                    enable_cleanup_closed=True
-                )
-        else:
-            connector = aiohttp.TCPConnector(
-                ssl=ssl_context,
-                limit=1,
-                limit_per_host=1,
-                enable_cleanup_closed=True
-            )
+        connector = aiohttp.TCPConnector(
+            ssl=ssl_context,
+            limit=1,
+            limit_per_host=1,
+            enable_cleanup_closed=True
+        )
 
-        return aiohttp.ClientSession(connector=connector, timeout=timeout)
+        return aiohttp.ClientSession(connector=connector)
 
     def is_timeout_error(self, e: Exception) -> bool:
         return isinstance(e, (asyncio.TimeoutError, aiohttp.ServerTimeoutError)) or 'timeout' in str(e).lower()
@@ -190,68 +110,67 @@ class Downloader:
             'Accept-Encoding': 'gzip, deflate'
         }
 
-    async def check_resource_exists(self, url: str, session: aiohttp.ClientSession) -> Tuple[bool, int, Optional[Exception]]:
+    async def check_resource_exists(self, url: str, session: aiohttp.ClientSession) -> Tuple[bool, int, Optional[Exception], Optional[aiohttp.ClientResponse]]:
         try:
             async with session.head(url, headers=self._get_headers()) as resp:
-                return resp.status == 200, resp.status, None
+                return resp.status == 200, resp.status, None, resp
         except Exception as e:
-            return False, 0, e
+            return False, 0, e, None
 
-    async def fetch_html(self, url: str, session: aiohttp.ClientSession) -> Tuple[str, int, Optional[Exception]]:
+    async def fetch_html(self, url: str, session: aiohttp.ClientSession) -> Tuple[str, int, Optional[Exception], Optional[aiohttp.ClientResponse]]:
         try:
             async with session.get(url, headers=self._get_headers()) as resp:
                 if resp.status != 200:
-                    return "", resp.status, Exception(f"HTTP status: {resp.status}")
+                    return "", resp.status, Exception(f"HTTP status: {resp.status}"), resp
                 html = await resp.text()
-                return html, resp.status, None
+                return html, resp.status, None, resp
         except Exception as e:
-            return "", 0, e
+            return "", 0, e, None
 
-    async def get_filename_from_url(self, url: str, session: aiohttp.ClientSession) -> Tuple[str, Optional[Exception]]:
+    async def get_filename_from_url(self, url: str, session: aiohttp.ClientSession) -> Tuple[str, Optional[Exception], Optional[aiohttp.ClientResponse]]:
         try:
             async with session.head(url, headers=self._get_headers()) as resp:
                 cd = resp.headers.get('Content-Disposition', '')
                 if not cd:
-                    return "unknown.html", None
+                    return "unknown.html", None, resp
 
                 match = re.search(r'filename\*?=[\'"]?(?:UTF-8[\'\']?)?([^;\'"]*)[\'"]?', cd)
                 if match:
-                    return match.group(1), None
+                    return match.group(1), None, resp
 
-                return url.split('/')[-1], None
+                return url.split('/')[-1], None, resp
         except Exception as e:
-            return "unknown.html", e
+            return "unknown.html", e, None
 
     async def fetch_work(self, work_id: int) -> Optional[Work]:
         url = f"{self.config.base_url}/{work_id}/a.html"
 
-        for attempt in range(self.config.retries):
-            proxy, proxy_idx = self.proxy_manager.get_next_proxy() if self.config.use_proxies else (None, -1)
-
+        while True:
             session = None
             try:
-                session = await self.create_fresh_session(proxy)
+                session = await self.create_fresh_session()
 
-                valid_resource, status_code, head_err = await self.check_resource_exists(url, session)
+                valid_resource, status_code, head_err, head_resp = await self.check_resource_exists(url, session)
 
                 if head_err and self.is_timeout_error(head_err):
-                    print(f"ID {work_id}: Timeout error with proxy - Retrying with another proxy")
+                    print(f"ID {work_id}: Timeout error - Retrying")
                     await asyncio.sleep(2)
                     continue
 
                 if status_code == 429:
-                    print(f"ID {work_id}: Rate limited (429) - Switching to next proxy and retrying")
-                    self.proxy_manager.mark_proxy_bad(proxy_idx)
-                    await asyncio.sleep(2)
+                    retry_after = int(head_resp.headers.get('retry-after', 300)) if head_resp else 300
+                    print(f"ID {work_id}: Rate limited (429) - Retrying after {retry_after}s")
+                    await asyncio.sleep(retry_after)
                     continue
 
                 if status_code == 503:
-                    print(f"ID {work_id}: Service unavailable (503) - Retrying with next proxy")
-                    await asyncio.sleep(3)
+                    retry_after = int(head_resp.headers.get('retry-after', 300)) if head_resp else 300
+                    print(f"ID {work_id}: Service unavailable (503) - Retrying after {retry_after}s")
+                    await asyncio.sleep(retry_after)
                     continue
 
                 if status_code == 0:
-                    print(f"ID {work_id}: Connection issue (status code 0) - Retrying with another proxy")
+                    print(f"ID {work_id}: Connection issue (status code 0) - Retrying")
                     await asyncio.sleep(2)
                     continue
 
@@ -259,21 +178,21 @@ class Downloader:
                     print(f"ID {work_id}: HEAD Check: Resource not available - Status: {status_code}")
                     return None
 
-                html_content, get_status_code, get_err = await self.fetch_html(url, session)
+                html_content, get_status_code, get_err, get_resp = await self.fetch_html(url, session)
 
                 if get_err and self.is_timeout_error(get_err):
-                    print(f"ID {work_id}: Timeout error during GET - Retrying with another proxy")
+                    print(f"ID {work_id}: Timeout error during GET - Retrying")
                     await asyncio.sleep(2)
                     continue
 
                 if get_status_code == 429:
-                    print(f"ID {work_id}: Rate limited (429) during GET - Switching to next proxy and retrying")
-                    self.proxy_manager.mark_proxy_bad(proxy_idx)
-                    await asyncio.sleep(2)
+                    retry_after = int(get_resp.headers.get('retry-after', 300)) if get_resp else 300
+                    print(f"ID {work_id}: Rate limited (429) during GET - Retrying after {retry_after}s")
+                    await asyncio.sleep(retry_after)
                     continue
 
                 if get_status_code == 0:
-                    print(f"ID {work_id}: Connection issue during GET (status code 0) - Retrying with another proxy")
+                    print(f"ID {work_id}: Connection issue during GET (status code 0) - Retrying")
                     await asyncio.sleep(2)
                     continue
 
@@ -283,10 +202,10 @@ class Downloader:
                     await asyncio.sleep(1)
                     continue
 
-                filename, filename_err = await self.get_filename_from_url(url, session)
+                filename, filename_err, filename_resp = await self.get_filename_from_url(url, session)
                 if filename_err:
                     if self.is_timeout_error(filename_err):
-                        print(f"ID {work_id}: Timeout error getting filename - Retrying with another proxy")
+                        print(f"ID {work_id}: Timeout error getting filename - Retrying")
                         await asyncio.sleep(2)
                         continue
                     print(f"Error getting filename for ID {work_id}: {filename_err}")
@@ -312,18 +231,15 @@ class Downloader:
 
             except Exception as e:
                 if self.is_timeout_error(e):
-                    print(f"ID {work_id}: Timeout error - Retrying with another proxy")
+                    print(f"ID {work_id}: Timeout error - Retrying")
                     await asyncio.sleep(2)
                     continue
 
-                print(f"ID {work_id}: Attempt {attempt + 1} failed: {e}")
+                print(f"ID {work_id}: Error: {e} - Retrying")
                 await asyncio.sleep(1)
             finally:
                 if session:
                     await session.close()
-
-        print(f"ID {work_id}: Failed after {self.config.retries} retries")
-        return None
 
     def parse_html(self, html: str) -> Tuple[Dict[str, str], str]:
         soup = BeautifulSoup(html, 'html.parser')
@@ -400,8 +316,7 @@ class Downloader:
         async with aiofiles.open(output_file, 'a') as f:
             await f.write(json.dumps(asdict(work)) + '\n')
 
-    async def process_work(self, work_id: int, semaphore: asyncio.Semaphore):
-        async with semaphore:
+    async def process_work(self, work_id: int):
             if self.progress.is_completed(work_id):
                 return
 
@@ -422,30 +337,20 @@ class Downloader:
         pending_ids = self.progress.get_pending_ids(self.config.start_id, self.config.end_id)
         total_ids = self.config.end_id - self.config.start_id + 1
 
-        print(f"Configuration: StartID={self.config.start_id}, EndID={self.config.end_id}, BatchSize={self.config.batch_size}, Concurrent={self.config.concurrent}")
-        if self.config.use_proxies:
-            print(f"Loaded {len(self.proxy_manager.proxies)} proxies")
-        else:
-            print("Running without proxies (direct connection)")
+        print(f"Configuration: StartID={self.config.start_id}, EndID={self.config.end_id}, BatchSize={self.config.batch_size}")
+        print("Running with direct connection")
 
         print(f"Processing {len(pending_ids)}/{total_ids} works")
-
-        semaphore = asyncio.Semaphore(self.config.concurrent)
-        tasks = []
 
         start_time = time.time()
         processed = 0
 
         for work_id in pending_ids:
-            task = asyncio.create_task(self.process_work(work_id, semaphore))
-            tasks.append(task)
+            await self.process_work(work_id)
+            processed += 1
 
-            # Process in chunks and save progress periodically
-            if len(tasks) >= 100:
-                await asyncio.gather(*tasks)
-                tasks = []
-                processed += 100
-
+            # Save progress periodically
+            if processed % 100 == 0:
                 await self.progress.save()
 
                 # Progress stats
@@ -456,9 +361,6 @@ class Downloader:
                 print(f"Progress: {processed + len(self.progress.completed)}/{total_ids} "
                            f"({(processed + len(self.progress.completed))/total_ids*100:.1f}%), "
                            f"{rate:.2f} works/sec, est. remaining: {remaining/60:.1f} min")
-
-        if tasks:
-            await asyncio.gather(*tasks)
 
         await self.progress.save()
 
@@ -472,12 +374,7 @@ def main():
     parser.add_argument('--start-id', type=int, default=1, help='Starting ID')
     parser.add_argument('--end-id', type=int, default=100000, help='Ending ID')
     parser.add_argument('--batch-size', type=int, default=10000, help='IDs per output file')
-    parser.add_argument('--concurrent', type=int, default=4, help='Concurrent requests')
-    parser.add_argument('--retries', type=int, default=5, help='Retry attempts')
-    parser.add_argument('--proxy-file', default='proxy.txt', help='Proxy file')
     parser.add_argument('--output', default='output', help='Output directory')
-    parser.add_argument('--use-proxies', action='store_true', help='Use proxies')
-    parser.add_argument('--timeout', type=int, default=60, help='Request timeout')
     parser.add_argument('--base-url', default='https://download.archiveofourown.org/downloads', help='Base URL')
     parser.add_argument('--user-agent', default='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', help='User agent')
 
@@ -487,12 +384,7 @@ def main():
         start_id=args.start_id,
         end_id=args.end_id,
         batch_size=args.batch_size,
-        concurrent=args.concurrent,
-        retries=args.retries,
-        proxy_file=args.proxy_file,
         output_dir=args.output,
-        use_proxies=args.use_proxies,
-        timeout=args.timeout,
         base_url=args.base_url,
         user_agent=args.user_agent
     )
