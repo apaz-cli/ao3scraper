@@ -206,7 +206,7 @@ class AO3Scraper:
                         if heading and chapter_index < len(userstuff_divs):
                             chapter_title = heading.get_text(strip=True)
                             content_div = userstuff_divs[chapter_index]
-                            content = content_div.get_text(separator='\n', strip=True)
+                            content = content_div.get_text(separator='\n\n', strip=True)
                             if content:
                                 chapters.append({
                                     "title": chapter_title,
@@ -215,7 +215,7 @@ class AO3Scraper:
                                 chapter_index += 1
                 elif userstuff_divs:
                     # Single chapter work - just get the content
-                    content = userstuff_divs[0].get_text(separator='\n', strip=True)
+                    content = userstuff_divs[0].get_text(separator='\n\n', strip=True)
                     if content:
                         chapters.append({
                             "title": "Chapter 1",
