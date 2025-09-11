@@ -58,7 +58,6 @@ class AO3Scraper:
 
         while True:
             try:
-                # Get the content directly
                 response = self.session.get(url)
 
                 if response.status_code == 429:
@@ -84,12 +83,8 @@ class AO3Scraper:
 
                 print(f"ID {work_id}: Status: {response.status_code}")
 
-                # Get filename from Content-Disposition header
-                filename = self.get_filename_from_response(response)
-                title = Path(filename).stem.replace('_', ' ') if filename != "unknown.html" else f"work_{work_id}"
-
                 # Parse the HTML content
-                metadata, chapters = self.parse_html(response.text)
+                title, metadata, chapters = self.parse_html(response.text)
 
                 return {
                     "id": str(work_id),
@@ -111,27 +106,20 @@ class AO3Scraper:
                 time.sleep(1)
                 continue
 
-    def get_filename_from_response(self, response: requests.Response) -> str:
-        """Extract filename from Content-Disposition header"""
-        cd = response.headers.get('Content-Disposition', '')
-        if not cd:
-            return "unknown.html"
-
-        match = re.search(r'filename\*?=[\'"]?(?:UTF-8[\'\']?)?([^;\'"]*)[\'"]?', cd)
-        if match:
-            return match.group(1)
-
-        return response.url.split('/')[-1] if response.url else "unknown.html"
 
     def parse_html(self, html: str) -> tuple[dict[str, str], list[dict[str, str]]]:
         """Parse HTML content and extract metadata and chapters"""
         soup = BeautifulSoup(html, 'html.parser')
         metadata = {}
 
-        # Extract title
-        title_elem = soup.find('h1')
-        if title_elem:
-            metadata['title'] = title_elem.get_text(strip=True)
+        # Extract title from h1 tag in the meta section
+        work_title = ""
+        meta_section = soup.find('div', class_='meta')
+        if meta_section:
+            title_h1 = meta_section.find('h1')
+            if title_h1:
+                work_title = title_h1.get_text(strip=True)
+
 
         # Extract author
         byline = soup.find('div', class_='byline')
@@ -161,15 +149,30 @@ class AO3Scraper:
         series_id = 0
         series_number = 0
 
-        # Extract series info from the original HTML element
-        series_dd = tags_section.find('dt', string='Series:') if tags_section else None
-        if series_dd:
-            series_dd = series_dd.find_next_sibling('dd')
-            if series_dd:
-                series_data = self.parse_metadata_content(series_dd, 'series')
-                series_name = series_data['name']
-                series_id = series_data['id']
-                series_number = series_data['number']
+        # Extract series info from the tags section
+        print(f"DEBUG: tags_section exists: {tags_section is not None}")
+        if tags_section:
+            # Look for Series dt tag
+            dt_tags = tags_section.find_all('dt')
+            print(f"DEBUG: Found {len(dt_tags)} dt tags")
+            for dt in dt_tags:
+                dt_text = dt.get_text(strip=True)
+                print(f"DEBUG: dt tag text: '{dt_text}'")
+                if dt_text == 'Series:':
+                    print("DEBUG: Found Series dt tag")
+                    series_dd = dt.find_next_sibling('dd')
+                    if series_dd:
+                        print(f"DEBUG: Found series dd: {series_dd.get_text(strip=True)}")
+                        series_data = self.parse_metadata_content(series_dd, 'series')
+                        print(f"DEBUG: Parsed series data: {series_data}")
+                        series_name = series_data['name']
+                        series_id = series_data['id']
+                        series_number = series_data['number']
+                    else:
+                        print("DEBUG: No series dd found")
+                    break
+            else:
+                print("DEBUG: No Series: dt tag found")
 
         metadata['series_name'] = series_name
         metadata['series_id'] = series_id
@@ -305,10 +308,7 @@ class AO3Scraper:
                                 "end_notes": chapter_end_notes
                             })
 
-        # Remove title from metadata since it's at top level
-        metadata.pop('title', None)
-
-        return metadata, chapters
+        return work_title, metadata, chapters
 
     def parse_metadata_content(self, content, content_type: str):
         """Parse stats string or series element into structured data"""
@@ -339,27 +339,38 @@ class AO3Scraper:
 
             # Get the full text content
             series_text = content.get_text(strip=True)
+            print(f"DEBUG: series_text: '{series_text}'")
 
             # Parse "Part X of Series Name" format
-            # Example: "Part 1 of Regender of Evangelion"
-            part_match = re.search(r'Part\s+(\d+)\s+of\s+(.+)', series_text)
+            # Example: "Part 1 of Regender of Evangelion" or "Part 1 ofRegender of Evangelion" (missing space)
+            part_match = re.search(r'Part\s+(\d+)\s+of\s*(.+)', series_text)
+            print(f"DEBUG: part_match found: {part_match is not None}")
             if part_match:
                 result['number'] = int(part_match.group(1))
+                print(f"DEBUG: series number: {result['number']}")
 
                 # Get series name and ID from the link
                 series_link = content.find('a')
+                print(f"DEBUG: series_link found: {series_link is not None}")
                 if series_link:
                     result['name'] = series_link.get_text(strip=True)
+                    print(f"DEBUG: series name from link: '{result['name']}'")
 
                     # Extract series ID from href
                     href = series_link.get('href', '')
+                    print(f"DEBUG: series href: '{href}'")
                     series_id_match = re.search(r'/series/(\d+)', href)
                     if series_id_match:
                         result['id'] = int(series_id_match.group(1))
+                        print(f"DEBUG: series id: {result['id']}")
                 else:
                     # Fallback to text parsing if no link found
                     result['name'] = part_match.group(2).strip()
+                    print(f"DEBUG: series name from text: '{result['name']}'")
+            else:
+                print("DEBUG: No 'Part X of Series Name' pattern found")
 
+            print(f"DEBUG: Final series result: {result}")
             return result
 
     def run(self):
