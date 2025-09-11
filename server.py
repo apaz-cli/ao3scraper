@@ -2,6 +2,7 @@
 import argparse
 import json
 import threading
+import collections
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -38,6 +39,8 @@ class WorkManager:
         self.private: set[int] = set()
         self.assigned: set[int] = set()
         self.next_id: int = 0
+        self.available_queue = collections.deque()
+        self.last_queued_id: int = 0
         self.lock = threading.Lock()
         self.load_completed_work()
 
@@ -67,17 +70,36 @@ class WorkManager:
         self.next_id = self.config.start_id
         while self.next_id in self.completed or self.next_id in self.private:
             self.next_id += 1
+        
+        # Initialize queue tracking
+        self.last_queued_id = self.next_id - 1
+
+    def _populate_queue(self):
+        """Populate the available queue with up to 10k new work IDs"""
+        chunk_size = 10000
+        end_id = min(self.last_queued_id + chunk_size, self.config.end_id)
+        
+        current_id = self.last_queued_id + 1
+        while current_id <= end_id:
+            if not ((current_id in self.completed) or (current_id in self.private) or (current_id in self.assigned)):
+                self.available_queue.append(current_id)
+            current_id += 1
+            
+        self.last_queued_id = end_id
 
     def get_work_batch(self, batch_size: int = 1000) -> list[int]:
         """Get a batch of work IDs to scrape."""
         with self.lock:
-            pending = []
+            # Refill queue if running low
+            if len(self.available_queue) < 1000 and self.last_queued_id < self.config.end_id:
+                self._populate_queue()
             
-            while len(pending) < batch_size and self.next_id <= self.config.end_id:
-                if not ((self.next_id in self.completed) or (self.next_id in self.private) or (self.next_id in self.assigned)):
-                    pending.append(self.next_id)
-                    self.assigned.add(self.next_id)
-                self.next_id += 1
+            # Get batch from queue
+            pending = []
+            for _ in range(min(batch_size, len(self.available_queue))):
+                work_id = self.available_queue.popleft()
+                pending.append(work_id)
+                self.assigned.add(work_id)
 
             return pending
 
