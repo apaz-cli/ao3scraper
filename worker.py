@@ -293,15 +293,13 @@ class AO3Scraper:
 
 def main():
     parser = argparse.ArgumentParser(description="AO3 Scraper Worker")
-    parser.add_argument('--server', default='localhost:8000', help='Server address (IP:port or localhost:port)')
+    parser.add_argument('--server', default='localhost', help='Server address (IP or hostname)')
+    parser.add_argument('--port', type=int, default=8000, help='Server port')
 
     args = parser.parse_args()
 
     # Handle server address
-    if '://' not in args.server:
-        server_url = f"http://{args.server}"
-    else:
-        server_url = args.server
+    server_url = f"http://{args.server}:{args.port}"
 
     config = Config(server_url=server_url)
     scraper = AO3Scraper(config)
