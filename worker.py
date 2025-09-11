@@ -150,29 +150,17 @@ class AO3Scraper:
         series_number = 0
 
         # Extract series info from the tags section
-        print(f"DEBUG: tags_section exists: {tags_section is not None}")
         if tags_section:
             # Look for Series dt tag
-            dt_tags = tags_section.find_all('dt')
-            print(f"DEBUG: Found {len(dt_tags)} dt tags")
-            for dt in dt_tags:
-                dt_text = dt.get_text(strip=True)
-                print(f"DEBUG: dt tag text: '{dt_text}'")
-                if dt_text == 'Series:':
-                    print("DEBUG: Found Series dt tag")
+            for dt in tags_section.find_all('dt'):
+                if dt.get_text(strip=True) == 'Series:':
                     series_dd = dt.find_next_sibling('dd')
                     if series_dd:
-                        print(f"DEBUG: Found series dd: {series_dd.get_text(strip=True)}")
                         series_data = self.parse_metadata_content(series_dd, 'series')
-                        print(f"DEBUG: Parsed series data: {series_data}")
                         series_name = series_data['name']
                         series_id = series_data['id']
                         series_number = series_data['number']
-                    else:
-                        print("DEBUG: No series dd found")
                     break
-            else:
-                print("DEBUG: No Series: dt tag found")
 
         metadata['series_name'] = series_name
         metadata['series_id'] = series_id
@@ -187,7 +175,7 @@ class AO3Scraper:
             if summary_p:
                 summary_blockquote = summary_p.find_next_sibling('blockquote', class_='userstuff')
                 if summary_blockquote:
-                    summary = str(summary_blockquote)
+                    summary = summary_blockquote.decode_contents().strip()
         metadata['summary'] = summary
 
         # Extract start notes (chapter notes in preface)
@@ -196,7 +184,7 @@ class AO3Scraper:
         if start_notes_p:
             start_notes_blockquote = start_notes_p.find_next_sibling('blockquote', class_='userstuff')
             if start_notes_blockquote:
-                start_notes = str(start_notes_blockquote)
+                start_notes = start_notes_blockquote.decode_contents().strip()
         metadata['start_notes'] = start_notes
 
         # Extract end notes (from afterword section)
@@ -209,7 +197,7 @@ class AO3Scraper:
                 if end_notes_p:
                     end_notes_blockquote = end_notes_p.find_next_sibling('blockquote', class_='userstuff')
                     if end_notes_blockquote:
-                        end_notes = str(end_notes_blockquote)
+                        end_notes = end_notes_blockquote.decode_contents().strip()
         metadata['end_notes'] = end_notes
 
         # Parse stats if available
@@ -239,7 +227,7 @@ class AO3Scraper:
                         if heading and chapter_index < len(userstuff_divs):
                             chapter_title = heading.get_text(strip=True)
                             content_div = userstuff_divs[chapter_index]
-                            content = str(content_div)
+                            content = content_div.decode_contents().strip()
 
                             # Extract chapter start/end notes from meta_div
                             chapter_start_notes = ""
@@ -247,14 +235,14 @@ class AO3Scraper:
                             if notes_section:
                                 blockquote = notes_section.find('blockquote', class_='userstuff')
                                 if blockquote:
-                                    chapter_start_notes = str(blockquote)
+                                    chapter_start_notes = blockquote.decode_contents().strip().strip()
 
                             chapter_end_notes = ""
                             endnotes = meta_div.find('div', class_='endnotes')
                             if endnotes:
                                 blockquote = endnotes.find('blockquote', class_='userstuff')
                                 if blockquote:
-                                    chapter_end_notes = str(blockquote)
+                                    chapter_end_notes = blockquote.decode_contents().strip().strip()
 
                             if content:
                                 chapters.append({
@@ -266,7 +254,7 @@ class AO3Scraper:
                                 chapter_index += 1
                 elif userstuff_divs:
                     # Single chapter work - just get the content
-                    content = str(userstuff_divs[0])
+                    content = userstuff_divs[0].decode_contents().strip()
                     if content:
                         chapters.append({
                             "title": "Chapter 1",
@@ -289,14 +277,14 @@ class AO3Scraper:
                     if notes_section:
                         blockquote = notes_section.find('blockquote', class_='userstuff')
                         if blockquote:
-                            chapter_start_notes = str(blockquote)
+                            chapter_start_notes = blockquote.decode_contents().strip()
 
                     chapter_end_notes = ""
                     endnotes = chapter_div.find('div', class_='endnotes')
                     if endnotes:
                         blockquote = endnotes.find('blockquote', class_='userstuff')
                         if blockquote:
-                            chapter_end_notes = str(blockquote)
+                            chapter_end_notes = blockquote.decode_contents().strip()
 
                     if content_div:
                         content = str(content_div)
@@ -339,38 +327,26 @@ class AO3Scraper:
 
             # Get the full text content
             series_text = content.get_text(strip=True)
-            print(f"DEBUG: series_text: '{series_text}'")
 
             # Parse "Part X of Series Name" format
             # Example: "Part 1 of Regender of Evangelion" or "Part 1 ofRegender of Evangelion" (missing space)
             part_match = re.search(r'Part\s+(\d+)\s+of\s*(.+)', series_text)
-            print(f"DEBUG: part_match found: {part_match is not None}")
             if part_match:
                 result['number'] = int(part_match.group(1))
-                print(f"DEBUG: series number: {result['number']}")
 
                 # Get series name and ID from the link
                 series_link = content.find('a')
-                print(f"DEBUG: series_link found: {series_link is not None}")
                 if series_link:
                     result['name'] = series_link.get_text(strip=True)
-                    print(f"DEBUG: series name from link: '{result['name']}'")
 
                     # Extract series ID from href
                     href = series_link.get('href', '')
-                    print(f"DEBUG: series href: '{href}'")
                     series_id_match = re.search(r'/series/(\d+)', href)
                     if series_id_match:
                         result['id'] = int(series_id_match.group(1))
-                        print(f"DEBUG: series id: {result['id']}")
                 else:
                     # Fallback to text parsing if no link found
                     result['name'] = part_match.group(2).strip()
-                    print(f"DEBUG: series name from text: '{result['name']}'")
-            else:
-                print("DEBUG: No 'Part X of Series Name' pattern found")
-
-            print(f"DEBUG: Final series result: {result}")
             return result
 
     def run(self):
