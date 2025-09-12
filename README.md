@@ -47,12 +47,16 @@ So, now the data is flowing in. A lot of data. You will want to keep an eye on y
 * 🔵 means "Run this on the server."
 
 ```sh
-# 🔵 Rename the results.jsonl file to something else. The server will create a new results.jsonl file to append to automatically.
-# Be sure that what you rename it to is on the same filesystem, otherwise the rename will not actually be atomic. Two seconds should be plenty of time for the server to close the file and complete any pending writes. Then you can move it wherever you want.
+# 🔵 Rename the results.jsonl file to something else. The server will create
+# a new results.jsonl file to append to automatically.
+# Be sure that what you rename it to is on the same filesystem, otherwise the rename
+# will not actually be atomic. Two seconds should be plenty of time for the server to
+# close the file and complete any pending writes. Then you can move it wherever you want.
 mv output/results.jsonl output/results_0.jsonl && sleep 2 && mv output/results_0.jsonl ~/results_0.jsonl
 # 🔵 Compress the file to speed up transfer (optional). This may take a while.
 gzip ~/results_0.jsonl
-# 🟠 Use rsync to securely copy the file to your local machine. Your command will of course vary based on the IP, file name, etc, but it should look like this. This too may take a while.
+# 🟠 Use rsync to securely copy the file to your local machine. Your command will of course
+# vary based on the IP, file name, etc, but it should look like this. This too may take a while.
 rsync -v -e "ssh -p 22 -i private_key.pem" ubuntu@204.55.27.121:~/results_0.jsonl.gz results_0.jsonl
 # 🟠 Decompress the file (if you compressed it earlier).
 gunzip results_0.jsonl.gz
