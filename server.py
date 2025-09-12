@@ -30,6 +30,13 @@ def get_disk_usage(path: str) -> int:
     except (subprocess.CalledProcessError, ValueError, IndexError):
         return 0
 
+def get_file_size(file_path: Path) -> int:
+    """Get file size in bytes"""
+    try:
+        return file_path.stat().st_size
+    except (FileNotFoundError, OSError):
+        return 0
+
 class WorkData(BaseModel):
     id: str
     title: str
@@ -187,6 +194,7 @@ def get_progress():
     remaining = total_range - total_processed
     disk_usage = get_disk_usage(config.output_dir)
     connected_workers = len(work_manager.worker_ips)
+    results_file_size = get_file_size(config.results_file)
 
     return {
         "completed": total_completed,
@@ -196,6 +204,7 @@ def get_progress():
         "progress_percent": (total_processed / total_range) * 100 if total_range > 0 else 0,
         "disk_usage_percent": disk_usage,
         "connected_workers": connected_workers,
+        "results_file_size": results_file_size,
     }
 
 def main():

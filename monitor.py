@@ -46,6 +46,24 @@ def format_percentage(completed, total):
         return "0.00%"
     return f"{(completed / total * 100):.2f}%"
 
+def format_file_size(size_bytes):
+    """Format file size in human readable format"""
+    if size_bytes == 0:
+        return "0 B"
+    
+    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    unit_index = 0
+    size = float(size_bytes)
+    
+    while size >= 1024 and unit_index < len(units) - 1:
+        size /= 1024
+        unit_index += 1
+    
+    if unit_index == 0:
+        return f"{int(size)} {units[unit_index]}"
+    else:
+        return f"{size:.2f} {units[unit_index]}"
+
 def format_progress_bar(completed, total):
     """Create a visual progress bar"""
     # Get terminal width, default to 78 if not available
@@ -106,6 +124,7 @@ def display_progress(data, responses_per_second=0.0):
     print(f"{Colors.YELLOW}Connected workers:     {Colors.BRIGHT_WHITE}{data['connected_workers']}{Colors.RESET}")
     print(f"{Colors.YELLOW}Responses/sec (total): {Colors.BRIGHT_WHITE}{responses_per_second:.2f}{Colors.RESET}")
     print(f"{Colors.YELLOW}Disk usage:            {Colors.BRIGHT_WHITE}{data['disk_usage_percent']}%{Colors.RESET}")
+    print(f"{Colors.YELLOW}Results file size:     {Colors.BRIGHT_WHITE}{format_file_size(data.get('results_file_size', 0))}{Colors.RESET}")
     print()
 
     # PROGRESS
@@ -116,9 +135,9 @@ def display_progress(data, responses_per_second=0.0):
     print(f"{Colors.YELLOW}Progress:        {Colors.BRIGHT_WHITE}{progress_percent:.4f}%{Colors.RESET}")
     print()
     
-    # Progress Bar
-    print(f"{Colors.BLUE}📈 BAR{Colors.RESET}")
-    print(f"{Colors.BLUE}{'-' * 5}{Colors.RESET}")
+    # PROGRESS BAR
+    print(f"{Colors.BLUE}📈 PROGRESS BAR{Colors.RESET}")
+    print(f"{Colors.BLUE}{'-' * 15}{Colors.RESET}")
     print(format_progress_bar(total_processed, total_estimated))
     print()
     
