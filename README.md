@@ -5,7 +5,8 @@ There are other AO3 scrapers out there. This one is better. More reliable. More 
 
 ## Local usage:
 ```sh
-# Classic python install instructions. Run this wherever you want to run the server, worker, or monitor.
+# Classic python install instructions.
+# Run this wherever you want to run the server, worker, or monitor.
 python -m venv .venv/
 . .venv/bin/activate
 pip install -r requirements.txt
