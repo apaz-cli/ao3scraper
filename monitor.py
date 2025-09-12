@@ -70,19 +70,13 @@ def format_progress_bar(completed, total):
     try:
         terminal_width = os.get_terminal_size().columns
     except OSError:
-        terminal_width = 78
+        terminal_width = 80
 
-    # Use minimum of terminal width and 100
     width = min(terminal_width, 100)
+    percent_filled: float = (completed / total) if total > 0 else 0
+    chars_filled = int(width * percent_filled)
 
-    if total == 0:
-        filled = 0
-    else:
-        filled = int((completed / total) * width)
-
-    filled_bar = f"{Colors.GREEN}{'█' * filled}{Colors.RESET}"
-    empty_bar = f"{Colors.DIM}{'░' * (width - filled)}{Colors.RESET}"
-    return f"[{filled_bar}{empty_bar}]"
+    return f"{Colors.YELLOW}{'█' * chars_filled}{Colors.DIM}{'░' * (width - chars_filled)}{Colors.RESET}"
 
 def calculate_responses_per_second(completed_history):
     """Calculate responses per second since monitor started"""
@@ -119,7 +113,7 @@ def display_progress(data, responses_per_second=0.0):
     total_estimated = total_processed + remaining
 
     # STATUS
-    print(f"{Colors.BOLD}{Colors.BLUE}🌩️ STATUS{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.BLUE}📊 STATUS{Colors.RESET}")
     print(f"{Colors.BLUE}{'-' * 9}{Colors.RESET}")
     print(f"{Colors.YELLOW}Connected workers:     {Colors.BRIGHT_WHITE}{data['connected_workers']}{Colors.RESET}")
     print(f"{Colors.YELLOW}Available queue size:  {Colors.BRIGHT_WHITE}{data['available_queue_size']}{Colors.RESET}")
@@ -129,16 +123,14 @@ def display_progress(data, responses_per_second=0.0):
     print()
 
     # PROGRESS
-    print(f"{Colors.BOLD}{Colors.BLUE}📊 PROGRESS{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.BLUE}📈 PROGRESS{Colors.RESET}")
     print(f"{Colors.BLUE}{'-' * 11}{Colors.RESET}")
     print(f"{Colors.YELLOW}Total processed: {Colors.BRIGHT_WHITE}{format_number(total_processed)}{Colors.RESET}")
     print(f"{Colors.YELLOW}Remaining:       {Colors.BRIGHT_WHITE}{format_number(remaining)}{Colors.RESET}")
-    print(f"{Colors.YELLOW}Progress:        {Colors.BRIGHT_WHITE}{progress_percent:.4f}%{Colors.RESET}")
     print()
 
     # PROGRESS BAR
-    print(f"{Colors.BLUE}📈 PROGRESS BAR{Colors.RESET}")
-    print(f"{Colors.BLUE}{'-' * 15}{Colors.RESET}")
+    print(f"{Colors.YELLOW}Progress:        {Colors.BRIGHT_WHITE}{progress_percent:.4f}%{Colors.RESET}")
     print(format_progress_bar(total_processed, total_estimated))
     print()
 

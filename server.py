@@ -141,19 +141,17 @@ class WorkManager:
                     if not_finished:
                         # Generate candidates outside lock
                         new_ids = set(range(start_id, end_id + 1)) - excluded_ids
-                        some_to_add = len(new_ids) > 0
 
                         # Add the new IDs to the queue. Lock for this.
-                        if some_to_add:
-                            with self.lock:
-                                # This could actually add work that is already in a worker's queue, or is already done.
-                                # That is fine, because when the work comes back as completed subsequent times
-                                # it will not be appended to the files because it will be in the completed set.
-                                self.available_queue.extend(new_ids)
-                                self.last_queued_id = end_id
+                        with self.lock:
+                            # This could actually add work that is already in a worker's queue, or is already done.
+                            # That is fine, because when the work comes back as completed subsequent times
+                            # it will not be appended to the files because it will be in the completed set.
+                            self.available_queue.extend(new_ids)
+                            self.last_queued_id = end_id
 
-                        print(f"Added {len(new_ids)} IDs to queue")
-                        added = some_to_add
+                        print(f"Added {len(new_ids)} IDs to queue, starting from {start_id}.")
+                        added = len(new_ids) > 0
 
                 # Sleep if nothing was added to avoid busy loop
                 if not added:
