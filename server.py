@@ -5,6 +5,7 @@ import threading
 import collections
 import subprocess
 import re
+import os
 import time
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
@@ -265,6 +266,63 @@ def get_progress():
         "connected_workers": connected_workers,
         "results_file_size": results_file_size,
     }
+
+@app.get("/file-status")
+def get_file_status():
+    """Get current results.jsonl file size for datafetch monitoring"""
+    results_file_size = get_file_size(config.results_file)
+    return {
+        "results_file_size": results_file_size,
+        "results_file_path": str(config.results_file)
+    }
+
+@app.post("/rotate-file")
+def rotate_file():
+    """Rotate results.jsonl file and compress it"""
+    with work_manager.lock:      
+        try:
+            # Find next available filename
+            counter = 0
+            while True:
+                rotated_name = f"results_{counter}.jsonl"
+                rotated_path = Path(config.output_dir) / rotated_name
+                if not rotated_path.exists():
+                    break
+                counter += 1
+            
+             # Rotate and allow any pending writes to complete
+            config.results_file.rename(rotated_path)
+            time.sleep(2)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error rotating file: {str(e)}")
+
+    # Compress the rotated file
+    compressed_path = f"{rotated_path}.gz"
+    subprocess.run(['gzip', '-k', str(rotated_path)], check=True)
+
+    # Return the new compressed filename and path
+    return {
+        "status": "success", 
+        "rotated_file": [f"{rotated_name}", f"{rotated_name}.gz"],
+        "compressed_path": compressed_path
+    }
+
+@app.post("/cleanup-file")
+def cleanup_file(filename: str):
+    """Remove a transferred file from the output directory"""
+    try:
+        file_path = Path(config.output_dir) / filename
+        if file_path.exists() and file_path.is_file():
+            # Safety check - only delete .gz files in output dir
+            if filename.endswith('.gz') and file_path.parent == Path(config.output_dir):
+                file_path.unlink()
+                return {"status": "success", "message": f"File {filename} deleted"}
+            else:
+                raise HTTPException(status_code=400, detail="Only .gz files in output directory can be deleted")
+        else:
+            raise HTTPException(status_code=404, detail=f"File {filename} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
 
 def main():
     global config, work_manager
