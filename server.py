@@ -3,12 +3,32 @@ import argparse
 import json
 import threading
 import collections
+import subprocess
+import re
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 import uvicorn
 
 app = FastAPI()
+
+def get_disk_usage(path: str) -> int:
+    """Get disk usage percentage for the filesystem containing the given path"""
+    try:
+        result = subprocess.run(['df', path], capture_output=True, text=True, check=True)
+        lines = result.stdout.strip().split('\n')
+        if len(lines) >= 2:
+            # Parse the second line which contains the disk usage info
+            fields = lines[1].split()
+            if len(fields) >= 5:
+                # The Use% field is typically the 5th field (0-indexed: 4)
+                use_percent_str = fields[4]
+                # Remove the % sign and convert to int
+                if use_percent_str.endswith('%'):
+                    return int(use_percent_str[:-1])
+        return 0
+    except (subprocess.CalledProcessError, ValueError, IndexError):
+        return 0
 
 class WorkData(BaseModel):
     id: str
@@ -41,6 +61,7 @@ class WorkManager:
         self.next_id: int = 0
         self.available_queue = collections.deque()
         self.last_queued_id: int = 0
+        self.worker_ips: set[str] = set()  # Track unique worker IPs
         self.lock = threading.Lock()
         self.load_completed_work()
 
@@ -130,13 +151,19 @@ config: Config = None # type: ignore
 work_manager: WorkManager = None # type: ignore
 
 @app.get("/work-batch")
-def get_work_batch(batch_size: int = 100):
+def get_work_batch(request: Request, batch_size: int = 100):
     """Get a batch of work IDs to scrape"""
+
+    # Track worker IP
+    if request.client:
+        client_ip = request.client.host
+        work_manager.worker_ips.add(client_ip)
+    
     work_ids = work_manager.get_work_batch(batch_size)
     return {"work_ids": work_ids}
 
 @app.post("/work-completed")
-def submit_completed_work(work_data: WorkData):
+def submit_completed_work(request: Request, work_data: WorkData):
     """Submit completed work data"""
     try:
         work_manager.save_work_data(work_data)
@@ -145,7 +172,7 @@ def submit_completed_work(work_data: WorkData):
         raise HTTPException(status_code=500, detail=f"Error saving work: {str(e)}")
 
 @app.post("/work-private")
-def submit_private_work(work_id: int):
+def submit_private_work(request: Request, work_id: int):
     """Mark work as private (404 response)"""
     work_manager.mark_private(work_id)
     return {"status": "success", "message": f"Work {work_id} marked as private"}
@@ -158,13 +185,17 @@ def get_progress():
     total_processed = total_completed + total_private
     total_range = config.end_id - config.start_id + 1
     remaining = total_range - total_processed
+    disk_usage = get_disk_usage(config.output_dir)
+    connected_workers = len(work_manager.worker_ips)
 
     return {
         "completed": total_completed,
         "private": total_private,
         "total_processed": total_processed,
         "remaining": remaining,
-        "progress_percent": (total_processed / total_range) * 100 if total_range > 0 else 0
+        "progress_percent": (total_processed / total_range) * 100 if total_range > 0 else 0,
+        "disk_usage_percent": disk_usage,
+        "connected_workers": connected_workers,
     }
 
 def main():
@@ -173,7 +204,7 @@ def main():
     parser = argparse.ArgumentParser(description="AO3 Scraper Server")
     parser.add_argument('--output', default='output', help='Output directory')
     parser.add_argument('--start-id', type=int, default=1, help='Starting ID')
-    parser.add_argument('--end-id', type=int, default=1_000_000_000, help='Ending ID')
+    parser.add_argument('--end-id', type=int, default=16_000_000, help='Ending ID')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
     parser.add_argument('--port', type=int, default=8000, help='Port to bind to')
     args = parser.parse_args()
