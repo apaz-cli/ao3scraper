@@ -5,6 +5,7 @@ import threading
 import collections
 import subprocess
 import re
+import time
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
@@ -104,32 +105,71 @@ class WorkManager:
 
         # Initialize queue tracking
         self.last_queued_id = self.next_id - 1
+        
+        # Start background queue manager
+        self.queue_thread = threading.Thread(target=self._queue_manager, daemon=True)
+        self.queue_thread.start()
 
-    def _populate_queue(self):
-        """Populate the available queue with up to 10k new work IDs"""
-        print("Populating work queue...")
-        chunk_size = 10000
-        end_id = min(self.last_queued_id + chunk_size, self.config.end_id)
+    def _queue_manager(self):
+        """Background thread that keeps queue populated"""
+        while True:
+            try:
+                # Quick status check
+                with self.lock:
+                    queue_size = len(self.available_queue)
+                    can_generate = self.last_queued_id < self.config.end_id
+                    
+                # Populate if queue is getting low
+                if queue_size < 5000 and can_generate:
+                    self._populate_batch_async()
+                
+                time.sleep(2)  # Check every 2 seconds
+                
+            except Exception as e:
+                print(f"Queue manager error: {e}")
+                time.sleep(10)
 
-        current_id = self.last_queued_id + 1
-        while current_id <= end_id:
-            if not ((current_id in self.completed) or (current_id in self.private) or (current_id in self.assigned)):
-                self.available_queue.append(current_id)
-            current_id += 1
-
-        self.last_queued_id = end_id
-        print(f"Queue populated up to ID {self.last_queued_id}, queue size: {len(self.available_queue)}")
+    def _populate_batch_async(self):
+        """Generate IDs with minimal lock time"""
+        batch_size = 30000
+        
+        # Snapshot current state (brief lock)
+        with self.lock:
+            if self.last_queued_id >= self.config.end_id:
+                return
+            
+            start_id = self.last_queued_id + 1  
+            end_id = min(start_id + batch_size - 1, self.config.end_id)
+            
+            # Copy exclusion sets - this is expensive but necessary
+            excluded_ids = self.completed | self.private | self.assigned
+        
+        # Generate candidates outside lock (expensive operation)
+        new_ids = [id for id in range(start_id, end_id + 1) 
+                   if id not in excluded_ids]
+        
+        # Add results with validation (brief lock)  
+        if new_ids:
+            with self.lock:
+                # Double-check IDs haven't been processed since snapshot
+                valid_ids = [id for id in new_ids 
+                            if (id not in self.completed and 
+                                id not in self.private and 
+                                id not in self.assigned)]
+                
+                if valid_ids:
+                    self.available_queue.extend(valid_ids)
+                    self.last_queued_id = end_id
+                    print(f"Background: Added {len(valid_ids)}/{len(new_ids)} IDs to queue")
 
     def get_work_batch(self, batch_size: int = 1000) -> list[int]:
         """Get a batch of work IDs to scrape."""
         with self.lock:
-            # Refill queue if running low
-            if len(self.available_queue) < 1000 and self.last_queued_id < self.config.end_id:
-                self._populate_queue()
-
-            # Get batch from queue
+            # Get batch from pre-populated queue
             pending = []
             for _ in range(min(batch_size, len(self.available_queue))):
+                if not self.available_queue:
+                    break
                 work_id = self.available_queue.popleft()
                 pending.append(work_id)
                 self.assigned.add(work_id)
