@@ -206,15 +206,15 @@ class WorkManager:
                     f.flush()
                     os.fsync(f.fileno())
 
-                # Then write to public file
                 if work_id not in self.completed:
                     with open(self.config.public_file, 'a') as f:
                         f.write(f"{work_id}\n")
                         f.flush()
                         os.fsync(f.fileno())
 
+                    # Move from assigned to completed if writes were successful
                     self.completed.add(work_id)
-                    self.assigned.discard(work_id)  # Remove from assigned set
+                    self.assigned.discard(work_id)
             except OSError as e:
                 # Don't mark as completed in memory if we can't write to files
                 raise Exception(f"Failed to write work data: {e}")
