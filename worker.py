@@ -362,7 +362,7 @@ class AO3Scraper:
                 time.sleep(30)
                 continue
 
-            print(f"Processing batch of {len(work_ids)} work IDs")
+            print(f"Processing batch of {len(work_ids)} works.")
 
             for work_id in work_ids:
                 work_data = self.fetch_work(work_id)
