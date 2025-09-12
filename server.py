@@ -135,23 +135,37 @@ class WorkManager:
         """Mark work as private and add to private.txt"""
         with self.lock:
             if work_id not in self.private:
-                self.private.add(work_id)
-                self.assigned.discard(work_id)  # Remove from assigned set
-                with open(self.config.private_file, 'a') as f:
-                    f.write(f"{work_id}\n")
+                try:
+                    with open(self.config.private_file, 'a') as f:
+                        f.write(f"{work_id}\n")
+                        f.flush()
+                    self.private.add(work_id)
+                    self.assigned.discard(work_id)  # Remove from assigned set
+                except OSError as e:
+                    # Don't mark as private in memory if we can't write to file
+                    raise Exception(f"Failed to write to private file: {e}")
 
     def save_work_data(self, work_data: WorkData):
         """Save work data to results.jsonl and public.txt"""
         with self.lock:
             work_id = int(work_data.id)
-            with open(self.config.results_file, 'a') as f:
-                json.dump(work_data.model_dump(), f)
-                f.write('\n')
-            if work_id not in self.completed:
-                self.completed.add(work_id)
-                self.assigned.discard(work_id)  # Remove from assigned set
-                with open(self.config.public_file, 'a') as f:
-                    f.write(f"{work_id}\n")
+            try:
+                # Write to results file first
+                with open(self.config.results_file, 'a') as f:
+                    json.dump(work_data.model_dump(), f)
+                    f.write('\n')
+                    f.flush()
+
+                # Then write to public file
+                if work_id not in self.completed:
+                    with open(self.config.public_file, 'a') as f:
+                        f.write(f"{work_id}\n")
+                        f.flush()
+                    self.completed.add(work_id)
+                    self.assigned.discard(work_id)  # Remove from assigned set
+            except OSError as e:
+                # Don't mark as completed in memory if we can't write to files
+                raise Exception(f"Failed to write work data: {e}")
 
 # Global instances
 config: Config = None # type: ignore
@@ -165,7 +179,7 @@ def get_work_batch(request: Request, batch_size: int = 100):
     if request.client:
         client_ip = request.client.host
         work_manager.worker_ips.add(client_ip)
-    
+
     work_ids = work_manager.get_work_batch(batch_size)
     return {"work_ids": work_ids}
 
