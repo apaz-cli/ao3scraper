@@ -376,9 +376,6 @@ class AO3Scraper:
                     if not success:
                         print(f"Failed to submit work {work_id}, will retry later")
 
-                # Small delay between requests
-                time.sleep(0.1)
-
 def main():
     parser = argparse.ArgumentParser(description="AO3 Scraper Worker")
     parser.add_argument('--server', default='localhost', help='Server address (IP or hostname)')

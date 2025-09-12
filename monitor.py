@@ -110,18 +110,19 @@ def display_progress(data, responses_per_second=0.0):
     print()
 
     # Extract data with the actual field names
-    completed = data.get('completed', 0)
-    private = data.get('private', 0)
-    total_processed = data.get('total_processed', completed + private)
-    remaining = data.get('remaining', 0)
-    progress_percent = data.get('progress_percent', 0)
+    completed = data['completed']
+    private = data['private']
+    remaining = data['remaining']
+    progress_percent = data['progress_percent']
 
+    total_processed = completed + private
     total_estimated = total_processed + remaining
 
     # STATUS
     print(f"{Colors.BOLD}{Colors.BLUE}🌩️ STATUS{Colors.RESET}")
     print(f"{Colors.BLUE}{'-' * 9}{Colors.RESET}")
     print(f"{Colors.YELLOW}Connected workers:     {Colors.BRIGHT_WHITE}{data['connected_workers']}{Colors.RESET}")
+    print(f"{Colors.YELLOW}Available queue size:  {Colors.BRIGHT_WHITE}{data['available_queue_size']}{Colors.RESET}")
     print(f"{Colors.YELLOW}Responses/sec (total): {Colors.BRIGHT_WHITE}{responses_per_second:.2f}{Colors.RESET}")
     print(f"{Colors.YELLOW}Disk usage:            {Colors.BRIGHT_WHITE}{data['disk_usage_percent']}%{Colors.RESET}")
     print(f"{Colors.YELLOW}Results file size:     {Colors.BRIGHT_WHITE}{format_file_size(data['results_file_size'])}{Colors.RESET}")

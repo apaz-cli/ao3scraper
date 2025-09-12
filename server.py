@@ -120,21 +120,23 @@ class WorkManager:
                     queue_size = len(self.available_queue)
                     can_generate = self.last_queued_id < self.config.end_id
                     
-                # Populate if queue is getting low
+                # Populate queue if it needs to be filled
+                added = False
                 if queue_size < 5000 and can_generate:
-                    self._populate_batch_async()
-                
-                time.sleep(2)  # Check every 2 seconds
+                    added = self._populate_batch_async()
+
+                if not added:
+                    time.sleep(2) 
                 
             except Exception as e:
                 print(f"Queue manager error: {e}")
                 time.sleep(10)
 
-    def _populate_batch_async(self):
+    def _populate_batch_async(self) -> bool:
         """Generate IDs with minimal lock time"""
         batch_size = 30000
         
-        # Snapshot current state (brief lock)
+        # Snapshot current state
         with self.lock:
             if self.last_queued_id >= self.config.end_id:
                 return
@@ -145,28 +147,25 @@ class WorkManager:
             # Copy exclusion sets - this is expensive but necessary
             excluded_ids = self.completed | self.private | self.assigned
         
-        # Generate candidates outside lock (expensive operation)
-        new_ids = [id for id in range(start_id, end_id + 1) 
-                   if id not in excluded_ids]
-        
-        # Add results with validation (brief lock)  
-        if new_ids:
+        # Generate candidates outside lock
+        new_ids = set(range(start_id, end_id + 1)) - excluded_ids
+        some_to_add = len(new_ids) > 0
+
+        # Add the new IDs to the queue.
+        if some_to_add:
             with self.lock:
-                # Double-check IDs haven't been processed since snapshot
-                valid_ids = [id for id in new_ids 
-                            if (id not in self.completed and 
-                                id not in self.private and 
-                                id not in self.assigned)]
-                
-                if valid_ids:
-                    self.available_queue.extend(valid_ids)
-                    self.last_queued_id = end_id
-                    print(f"Background: Added {len(valid_ids)}/{len(new_ids)} IDs to queue")
+                # This could actually add work that is already in a worker's queue, or is already done.
+                # That is fine, because when the work comes back as completed subsequent times
+                # it will not be appended to the files because it will be in the completed set.
+                self.available_queue.extend(new_ids)
+                self.last_queued_id = end_id
+        
+        print(f"Added {len(new_ids)} IDs to queue")
+        return some_to_add
 
     def get_work_batch(self, batch_size: int = 1000) -> list[int]:
         """Get a batch of work IDs to scrape."""
         with self.lock:
-            # Get batch from pre-populated queue
             pending = []
             for _ in range(min(batch_size, len(self.available_queue))):
                 if not self.available_queue:
@@ -182,13 +181,17 @@ class WorkManager:
         with self.lock:
             if work_id not in self.private:
                 try:
+                    # Write to private file
                     with open(self.config.private_file, 'a') as f:
                         f.write(f"{work_id}\n")
                         f.flush()
+
+                    # Move to the private set if the write was successful.
+                    # This will cause it to be skipped by subsequent calls to mark_private,
+                    # in this process and if it is killed and restarted, because we know the file was written.
                     self.private.add(work_id)
-                    self.assigned.discard(work_id)  # Remove from assigned set
+                    self.assigned.discard(work_id)
                 except OSError as e:
-                    # Don't mark as private in memory if we can't write to file
                     raise Exception(f"Failed to write to private file: {e}")
 
     def save_work_data(self, work_data: WorkData):
@@ -207,6 +210,7 @@ class WorkManager:
                     with open(self.config.public_file, 'a') as f:
                         f.write(f"{work_id}\n")
                         f.flush()
+
                     self.completed.add(work_id)
                     self.assigned.discard(work_id)  # Remove from assigned set
             except OSError as e:
@@ -255,6 +259,7 @@ def get_progress():
     disk_usage = get_disk_usage(config.output_dir)
     connected_workers = len(work_manager.worker_ips)
     results_file_size = get_file_size(config.results_file)
+    available_queue_size = len(work_manager.available_queue)
 
     return {
         "completed": total_completed,
@@ -265,6 +270,7 @@ def get_progress():
         "disk_usage_percent": disk_usage,
         "connected_workers": connected_workers,
         "results_file_size": results_file_size,
+        "available_queue_size": available_queue_size
     }
 
 @app.get("/file-status")
