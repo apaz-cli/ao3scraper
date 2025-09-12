@@ -43,11 +43,11 @@ class DataFetcher:
         try:
             remote_file = f"{self.config.server_url.split('//')[1].split(':')[0]}:{remote_path}"
             local_file = self.config.local_dir / filename
-            
+
             # Use rsync to transfer the file
             cmd = ['rsync', '-v', remote_file, str(local_file)]
             result = subprocess.run(cmd, capture_output=True, text=True)
-            
+
             if result.returncode == 0:
                 print(f"Successfully transferred {filename}")
                 return True
@@ -80,14 +80,14 @@ class DataFetcher:
 
         if file_size >= self.config.threshold_bytes:
             print(f"Size threshold ({self.config.threshold_bytes / (1024*1024*1024):.1f} GB) exceeded, rotating file...")
-            
+
             rotation_result = self.rotate_file()
             if rotation_result.get('status') == 'success':
                 rotated_filename = rotation_result['rotated_file']
                 compressed_path = rotation_result['compressed_path']
-                
+
                 print(f"File rotated to {rotated_filename}, transferring...")
-                
+
                 if self.transfer_file(rotated_filename, compressed_path):
                     print(f"Transfer successful, cleaning up {rotated_filename} on server...")
                     self.cleanup_file(rotated_filename)
@@ -121,7 +121,7 @@ class DataFetcher:
                 break
             except Exception as e:
                 print(f"Unexpected error in cycle: {e}")
-            
+
             print("Waiting 60 seconds before next check...\n")
             time.sleep(60)
 
@@ -132,9 +132,9 @@ def main():
     parser.add_argument('--remote-output', required=True, help='Remote output directory path')
     parser.add_argument('--threshold', type=int, default=10, help='File size threshold in GB')
     parser.add_argument('--local-dir', default='./downloads', help='Local directory for downloaded files')
-    
+
     args = parser.parse_args()
-    
+
     config = Config(
         server=args.server,
         port=args.port,
@@ -142,7 +142,7 @@ def main():
         threshold=args.threshold,
         local_dir=args.local_dir
     )
-    
+
     fetcher = DataFetcher(config)
     fetcher.run()
 

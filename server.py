@@ -7,10 +7,15 @@ import subprocess
 import re
 import os
 import time
+import signal
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 import uvicorn
+
+
+QUEUE_BUMP_SIZE = 30000
+QUEUE_MIN_SIZE = 5000
 
 app = FastAPI()
 
@@ -106,7 +111,7 @@ class WorkManager:
 
         # Initialize queue tracking
         self.last_queued_id = self.next_id - 1
-        
+
         # Start background queue manager
         self.queue_thread = threading.Thread(target=self._queue_manager, daemon=True)
         self.queue_thread.start()
@@ -119,49 +124,44 @@ class WorkManager:
                 with self.lock:
                     queue_size = len(self.available_queue)
                     can_generate = self.last_queued_id < self.config.end_id
-                    
+
                 # Populate queue if it needs to be filled
                 added = False
-                if queue_size < 5000 and can_generate:
-                    added = self._populate_batch_async()
+                if queue_size < QUEUE_MIN_SIZE and can_generate:
 
+                    # Snapshot current state. Copying the exclusion sets is expensive but necessary.
+                    with self.lock:
+                        last_id = self.last_queued_id
+                        not_finished = last_id < self.config.end_id
+                        if not_finished:
+                            start_id = self.last_queued_id + 1
+                            end_id = min(start_id + QUEUE_BUMP_SIZE - 1, self.config.end_id)
+                            excluded_ids = self.completed | self.private | self.assigned
+
+                    if not_finished:
+                        # Generate candidates outside lock
+                        new_ids = set(range(start_id, end_id + 1)) - excluded_ids
+                        some_to_add = len(new_ids) > 0
+
+                        # Add the new IDs to the queue. Lock for this.
+                        if some_to_add:
+                            with self.lock:
+                                # This could actually add work that is already in a worker's queue, or is already done.
+                                # That is fine, because when the work comes back as completed subsequent times
+                                # it will not be appended to the files because it will be in the completed set.
+                                self.available_queue.extend(new_ids)
+                                self.last_queued_id = end_id
+
+                        print(f"Added {len(new_ids)} IDs to queue")
+                        added = some_to_add
+
+                # Sleep if nothing was added to avoid busy loop
                 if not added:
-                    time.sleep(2) 
-                
+                    time.sleep(1)
+
             except Exception as e:
                 print(f"Queue manager error: {e}")
                 time.sleep(10)
-
-    def _populate_batch_async(self) -> bool:
-        """Generate IDs with minimal lock time"""
-        batch_size = 30000
-        
-        # Snapshot current state
-        with self.lock:
-            if self.last_queued_id >= self.config.end_id:
-                return
-            
-            start_id = self.last_queued_id + 1  
-            end_id = min(start_id + batch_size - 1, self.config.end_id)
-            
-            # Copy exclusion sets - this is expensive but necessary
-            excluded_ids = self.completed | self.private | self.assigned
-        
-        # Generate candidates outside lock
-        new_ids = set(range(start_id, end_id + 1)) - excluded_ids
-        some_to_add = len(new_ids) > 0
-
-        # Add the new IDs to the queue.
-        if some_to_add:
-            with self.lock:
-                # This could actually add work that is already in a worker's queue, or is already done.
-                # That is fine, because when the work comes back as completed subsequent times
-                # it will not be appended to the files because it will be in the completed set.
-                self.available_queue.extend(new_ids)
-                self.last_queued_id = end_id
-        
-        print(f"Added {len(new_ids)} IDs to queue")
-        return some_to_add
 
     def get_work_batch(self, batch_size: int = 1000) -> list[int]:
         """Get a batch of work IDs to scrape."""
@@ -201,9 +201,9 @@ class WorkManager:
             try:
                 # Write to results file first
                 with open(self.config.results_file, 'a') as f:
-                    json.dump(work_data.model_dump(), f)
-                    f.write('\n')
+                    f.write(work_data.model_dump_json() + '\n')
                     f.flush()
+                    os.fsync(f.fileno())
 
                 # Then write to public file
                 if work_id not in self.completed:
@@ -216,6 +216,13 @@ class WorkManager:
             except OSError as e:
                 # Don't mark as completed in memory if we can't write to files
                 raise Exception(f"Failed to write work data: {e}")
+
+    def shutdown(self):
+        """Gracefully shutdown the work manager"""
+        print("Initiating graceful shutdown...")
+        with self.lock:
+            print("Files are consistent, see ya later nerd.")
+            exit(0)
 
 # Global instances
 config: Config = None # type: ignore
@@ -285,7 +292,7 @@ def get_file_status():
 @app.post("/rotate-file")
 def rotate_file():
     """Rotate results.jsonl file and compress it"""
-    with work_manager.lock:      
+    with work_manager.lock:
         try:
             # Find next available filename
             counter = 0
@@ -295,7 +302,7 @@ def rotate_file():
                 if not rotated_path.exists():
                     break
                 counter += 1
-            
+
              # Rotate and allow any pending writes to complete
             config.results_file.rename(rotated_path)
             time.sleep(2)
@@ -308,7 +315,7 @@ def rotate_file():
 
     # Return the new compressed filename and path
     return {
-        "status": "success", 
+        "status": "success",
         "rotated_file": [f"{rotated_name}", f"{rotated_name}.gz"],
         "compressed_path": compressed_path
     }
@@ -330,8 +337,25 @@ def cleanup_file(filename: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
 
+@app.post("/shutdown")
+def shutdown_server():
+    """Gracefully shutdown the server"""
+    work_manager.shutdown()
+    return {"status": "success", "message": "Server shutdown initiated"}
+
+def shutdown_handler(signum, frame):
+    """Handle shutdown signals"""
+    sigdict = dict((getattr(signal, n), n) for n in dir(signal) if n.startswith('SIG') and '_' not in n)
+    print("-" * 60 + f"\nReceived signal {sigdict[signum]}, shutting down gracefully...\n" + "-" * 60)
+    if work_manager:
+        work_manager.shutdown()
+
 def main():
     global config, work_manager
+
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
 
     parser = argparse.ArgumentParser(description="AO3 Scraper Server")
     parser.add_argument('--output', default='output', help='Output directory')
