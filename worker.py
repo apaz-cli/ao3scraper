@@ -107,7 +107,7 @@ class AO3Scraper:
                 continue
 
 
-    def parse_html(self, html: str) -> tuple[dict[str, str], list[dict[str, str]]]:
+    def parse_html(self, html: str) -> tuple[str, dict[str, str], list[dict[str, str]]]:
         """Parse HTML content and extract metadata and chapters"""
         soup = BeautifulSoup(html, 'html.parser')
         metadata = {}
