@@ -76,6 +76,7 @@ class WorkManager:
 
     def load_completed_work(self):
         """Load completed work IDs from public.txt and private.txt"""
+        print("Loading completed work IDs...")
         if self.config.public_file.exists():
             with open(self.config.public_file, 'r') as f:
                 for line in f:
@@ -86,6 +87,7 @@ class WorkManager:
                         except ValueError:
                             pass
 
+        print("Loading private work IDs...")
         if self.config.private_file.exists():
             with open(self.config.private_file, 'r') as f:
                 for line in f:
@@ -97,6 +99,7 @@ class WorkManager:
                             pass
 
         # Find the next ID to assign based on completed/private work
+        print("Determining next work ID offset...")
         self.next_id = self.config.start_id
         while self.next_id in self.completed or self.next_id in self.private:
             self.next_id += 1
@@ -106,6 +109,7 @@ class WorkManager:
 
     def _populate_queue(self):
         """Populate the available queue with up to 10k new work IDs"""
+        print("Populating work queue...")
         chunk_size = 10000
         end_id = min(self.last_queued_id + chunk_size, self.config.end_id)
 
@@ -116,6 +120,7 @@ class WorkManager:
             current_id += 1
 
         self.last_queued_id = end_id
+        print(f"Queue populated up to ID {self.last_queued_id}, queue size: {len(self.available_queue)}")
 
     def get_work_batch(self, batch_size: int = 1000) -> list[int]:
         """Get a batch of work IDs to scrape."""
