@@ -138,7 +138,7 @@ def display_progress(data, responses_per_second=0.0):
     print(f"{Colors.BOLD}{Colors.BLUE}📋 DATA{Colors.RESET}")
     print(f"{Colors.BLUE}{'-' * 7}{Colors.RESET}")
     print(f"{Colors.GREEN}Public works:{Colors.RESET} {Colors.BRIGHT_WHITE}{format_number(completed)}{Colors.RESET} {Colors.DIM}({format_percentage(completed, total_processed) if total_processed > 0 else '0.00%'}){Colors.RESET}")
-    print(f"{Colors.RED}Private works:{Colors.RESET} {Colors.BRIGHT_WHITE}{format_number(private)}{Colors.RESET} {Colors.DIM}({format_percentage(private, total_processed) if total_processed > 0 else '0.00%'}){Colors.RESET}", end='')
+    print(f"{Colors.RED}Private works:{Colors.RESET} {Colors.BRIGHT_WHITE}{format_number(private)}{Colors.RESET} {Colors.DIM}({format_percentage(private, total_processed) if total_processed > 0 else '0.00%'}){Colors.RESET}")
 
 def main():
     parser = argparse.ArgumentParser(description='Monitor AO3 scraper progress')
