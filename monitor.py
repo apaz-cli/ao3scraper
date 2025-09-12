@@ -119,7 +119,7 @@ def display_progress(data, responses_per_second=0.0):
     total_estimated = total_processed + remaining
 
     # STATUS
-    print(f"{Colors.BOLD}{Colors.BLUE}🌩️  STATUS{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.BLUE}🌩️ STATUS{Colors.RESET}")
     print(f"{Colors.BLUE}{'-' * 9}{Colors.RESET}")
     print(f"{Colors.YELLOW}Connected workers:     {Colors.BRIGHT_WHITE}{data['connected_workers']}{Colors.RESET}")
     print(f"{Colors.YELLOW}Responses/sec (total): {Colors.BRIGHT_WHITE}{responses_per_second:.2f}{Colors.RESET}")
