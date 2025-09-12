@@ -185,6 +185,7 @@ class WorkManager:
                     with open(self.config.private_file, 'a') as f:
                         f.write(f"{work_id}\n")
                         f.flush()
+                        os.fsync(f.fileno())
 
                     # Move to the private set if the write was successful.
                     # This will cause it to be skipped by subsequent calls to mark_private,
@@ -210,6 +211,7 @@ class WorkManager:
                     with open(self.config.public_file, 'a') as f:
                         f.write(f"{work_id}\n")
                         f.flush()
+                        os.fsync(f.fileno())
 
                     self.completed.add(work_id)
                     self.assigned.discard(work_id)  # Remove from assigned set
