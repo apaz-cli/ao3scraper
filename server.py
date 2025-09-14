@@ -243,6 +243,9 @@ def get_work_batch(request: Request, batch_size: int = 100):
 @app.post("/work-completed")
 def submit_completed_work(request: Request, work_data: WorkData):
     """Submit completed work data"""
+    if request.client:
+        client_ip = request.client.host
+        work_manager.worker_ips.add(client_ip)
     try:
         work_manager.save_work_data(work_data)
         return {"status": "success", "message": f"Work {int(work_data.id)} saved successfully"}
@@ -252,6 +255,9 @@ def submit_completed_work(request: Request, work_data: WorkData):
 @app.post("/work-private")
 def submit_private_work(request: Request, work_id: int):
     """Mark work as private (404 response)"""
+    if request.client:
+        client_ip = request.client.host
+        work_manager.worker_ips.add(client_ip)
     work_manager.mark_private(work_id)
     return {"status": "success", "message": f"Work {work_id} marked as private"}
 

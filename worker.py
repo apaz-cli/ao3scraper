@@ -116,9 +116,11 @@ class AO3Scraper:
         work_title = ""
         meta_section = soup.find('div', class_='meta')
         if meta_section:
-            title_h1 = meta_section.find('h1')
+            assert hasattr(meta_section, 'find')
+            title_h1 = meta_section.find('h1') # type: ignore
             if title_h1:
-                work_title = title_h1.get_text(strip=True)
+                assert hasattr(title_h1, 'get_text')
+                work_title = title_h1.get_text(strip=True) # type: ignore
 
 
         # Extract author
@@ -152,11 +154,13 @@ class AO3Scraper:
         # Extract series info from the tags section
         if tags_section:
             # Look for Series dt tag
-            for dt in tags_section.find_all('dt'):
+            assert hasattr(tags_section, 'find_all')
+            for dt in tags_section.find_all('dt'): # type: ignore
                 if dt.get_text(strip=True) == 'Series:':
                     series_dd = dt.find_next_sibling('dd')
                     if series_dd:
                         series_data = self.parse_metadata_content(series_dd, 'series')
+                        assert isinstance(series_data, dict)
                         series_name = series_data['name']
                         series_id = series_data['id']
                         series_number = series_data['number']
@@ -171,11 +175,13 @@ class AO3Scraper:
         summary_section = soup.find('div', class_='meta')
         if summary_section:
             # Look for "Summary" text followed by blockquote
-            summary_p = summary_section.find('p', string='Summary')
+            assert hasattr(summary_section, 'find')
+            summary_p = summary_section.find('p', string='Summary') # type: ignore
             if summary_p:
                 summary_blockquote = summary_p.find_next_sibling('blockquote', class_='userstuff')
                 if summary_blockquote:
-                    summary = summary_blockquote.decode_contents().strip()
+                    assert hasattr(summary_blockquote, 'decode_contents')
+                    summary = summary_blockquote.decode_contents().strip() # type: ignore
         metadata['summary'] = summary
 
         # Extract start notes (chapter notes in preface)
@@ -184,20 +190,24 @@ class AO3Scraper:
         if start_notes_p:
             start_notes_blockquote = start_notes_p.find_next_sibling('blockquote', class_='userstuff')
             if start_notes_blockquote:
-                start_notes = start_notes_blockquote.decode_contents().strip()
+                assert hasattr(start_notes_blockquote, 'decode_contents')
+                start_notes = start_notes_blockquote.decode_contents().strip() # type: ignore
         metadata['start_notes'] = start_notes
 
         # Extract end notes (from afterword section)
         end_notes = ""
         afterword = soup.find('div', id='afterword')
         if afterword:
-            endnotes_div = afterword.find('div', id='endnotes')
+            assert hasattr(afterword, 'find')
+            endnotes_div = afterword.find('div', id='endnotes') # type: ignore
             if endnotes_div:
-                end_notes_p = endnotes_div.find('p', string='End Notes')
+                assert hasattr(endnotes_div, 'find')
+                end_notes_p = endnotes_div.find('p', string='End Notes') # type: ignore
                 if end_notes_p:
                     end_notes_blockquote = end_notes_p.find_next_sibling('blockquote', class_='userstuff')
                     if end_notes_blockquote:
-                        end_notes = end_notes_blockquote.decode_contents().strip()
+                        assert hasattr(end_notes_blockquote, 'decode_contents')
+                        end_notes = end_notes_blockquote.decode_contents().strip() # type: ignore
         metadata['end_notes'] = end_notes
 
         # Parse stats if available
@@ -254,7 +264,9 @@ class AO3Scraper:
                                 chapter_index += 1
                 elif userstuff_divs:
                     # Single chapter work - just get the content
-                    content = userstuff_divs[0].decode_contents().strip()
+                    first_div = userstuff_divs[0]
+                    assert hasattr(first_div, 'decode_contents')
+                    content = first_div.decode_contents().strip() # type: ignore
                     if content:
                         chapters.append({
                             "title": "Chapter 1",
@@ -298,7 +310,7 @@ class AO3Scraper:
 
         return work_title, metadata, chapters
 
-    def parse_metadata_content(self, content, content_type: str):
+    def parse_metadata_content(self, content, content_type: str) -> dict:
         """Parse stats string or series element into structured data"""
         if content_type == 'stats':
             result = {}
@@ -315,9 +327,6 @@ class AO3Scraper:
                 match = re.search(pattern, clean_stats)
                 if match:
                     result[key] = match.group(1)
-
-            return result
-
         elif content_type == 'series':
             result = {
                 'name': '',
@@ -347,7 +356,7 @@ class AO3Scraper:
                 else:
                     # Fallback to text parsing if no link found
                     result['name'] = part_match.group(2).strip()
-            return result
+        return result
 
     def run(self):
         """Main worker loop"""
