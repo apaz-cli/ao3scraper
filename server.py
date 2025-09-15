@@ -213,8 +213,7 @@ class WorkManager:
                     # Move from assigned to completed if writes were successful
                     self.completed.add(work_id)
                     self.assigned.discard(work_id)
-            except OSError as e:
-                # Don't mark as completed in memory if we can't write to files
+            except Exception as e:
                 raise Exception(f"Failed to write work data: {e}")
 
     def shutdown(self):
@@ -237,20 +236,21 @@ def get_work_batch(request: Request, batch_size: int = 100):
         client_ip = request.client.host
         work_manager.worker_ips.add(client_ip)
 
-    work_ids = work_manager.get_work_batch(batch_size)
-    return {"work_ids": work_ids}
+    # Send batch
+    return {"work_ids": work_manager.get_work_batch(batch_size)}
 
 @app.post("/work-completed")
 def submit_completed_work(request: Request, work_data: WorkData):
     """Submit completed work data"""
+
+    # Track worker IP
     if request.client:
         client_ip = request.client.host
         work_manager.worker_ips.add(client_ip)
-    try:
-        work_manager.save_work_data(work_data)
-        return {"status": "success", "message": f"Work {int(work_data.id)} saved successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving work: {str(e)}")
+
+    # Save work
+    work_manager.save_work_data(work_data)
+    return {"status": "success", "message": f"Work {int(work_data.id)} saved successfully"}
 
 @app.post("/work-private")
 def submit_private_work(request: Request, work_id: int):

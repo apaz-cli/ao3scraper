@@ -233,26 +233,34 @@ class AO3Scraper:
                     chapter_index = 0
                     for meta_div in meta_divs:
                         # Look for chapter heading
-                        heading = meta_div.find(['h2', 'h3'], class_='heading')
+                        assert hasattr(meta_div, 'find')
+                        heading = meta_div.find(['h2', 'h3'], class_='heading') # type: ignore
                         if heading and chapter_index < len(userstuff_divs):
                             chapter_title = heading.get_text(strip=True)
                             content_div = userstuff_divs[chapter_index]
-                            content = content_div.decode_contents().strip()
+                            assert hasattr(content_div, 'decode_contents')
+                            content = content_div.decode_contents().strip() # type: ignore
 
                             # Extract chapter start/end notes from meta_div
+                            assert hasattr(meta_div, 'find')
                             chapter_start_notes = ""
-                            notes_section = meta_div.find('div', class_='summary') or meta_div.find('div', class_='notes')
+                            notes_section = meta_div.find('div', class_='summary') or meta_div.find('div', class_='notes') # type: ignore
                             if notes_section:
-                                blockquote = notes_section.find('blockquote', class_='userstuff')
+                                assert hasattr(notes_section, 'find')
+                                blockquote = notes_section.find('blockquote', class_='userstuff') # type: ignore
                                 if blockquote:
-                                    chapter_start_notes = blockquote.decode_contents().strip().strip()
+                                    assert hasattr(blockquote, 'decode_contents')
+                                    chapter_start_notes = blockquote.decode_contents().strip().strip() # type: ignore
 
                             chapter_end_notes = ""
-                            endnotes = meta_div.find('div', class_='endnotes')
+                            assert hasattr(meta_div, 'find')
+                            endnotes = meta_div.find('div', class_='endnotes') # type: ignore
                             if endnotes:
-                                blockquote = endnotes.find('blockquote', class_='userstuff')
+                                assert hasattr(endnotes, 'find')
+                                blockquote = endnotes.find('blockquote', class_='userstuff') # type: ignore
                                 if blockquote:
-                                    chapter_end_notes = blockquote.decode_contents().strip().strip()
+                                    assert hasattr(blockquote, 'decode_contents')
+                                    chapter_end_notes = blockquote.decode_contents().strip().strip() # type: ignore
 
                             if content:
                                 chapters.append({
@@ -284,19 +292,25 @@ class AO3Scraper:
                     content_div = chapter_div.find('div', class_='userstuff') # type: ignore
 
                     # Extract chapter start/end notes
+                    assert hasattr(chapter_div, 'find')
                     chapter_start_notes = ""
-                    notes_section = chapter_div.find('div', class_='summary') or chapter_div.find('div', class_='notes')
+                    notes_section = chapter_div.find('div', class_='summary') or chapter_div.find('div', class_='notes') # type: ignore
                     if notes_section:
-                        blockquote = notes_section.find('blockquote', class_='userstuff')
+                        assert hasattr(notes_section, 'find')
+                        blockquote = notes_section.find('blockquote', class_='userstuff') # type: ignore
                         if blockquote:
-                            chapter_start_notes = blockquote.decode_contents().strip()
+                            assert hasattr(blockquote, 'decode_contents')
+                            chapter_start_notes = blockquote.decode_contents().strip() # type: ignore
 
+                    assert hasattr(chapter_div, 'find')
                     chapter_end_notes = ""
-                    endnotes = chapter_div.find('div', class_='endnotes')
+                    endnotes = chapter_div.find('div', class_='endnotes') # type: ignore
                     if endnotes:
-                        blockquote = endnotes.find('blockquote', class_='userstuff')
+                        assert hasattr(endnotes, 'find')
+                        blockquote = endnotes.find('blockquote', class_='userstuff') # type: ignore
                         if blockquote:
-                            chapter_end_notes = blockquote.decode_contents().strip()
+                            assert hasattr(blockquote, 'decode_contents')
+                            chapter_end_notes = blockquote.decode_contents().strip() # type: ignore
 
                     if content_div:
                         content = str(content_div)
