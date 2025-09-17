@@ -10,14 +10,13 @@ class Config:
     def __init__(self, server_url: str = "http://localhost:8000"):
         self.server_url = server_url
         self.base_url = "https://download.archiveofourown.org/downloads"
-        self.user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 class AO3Scraper:
     def __init__(self, config: Config):
         self.config = config
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': config.user_agent,
+            'User-Agent': "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             'Accept': '*/*',
             'Accept-Encoding': 'gzip, deflate'
         })
@@ -54,8 +53,8 @@ class AO3Scraper:
 
     def fetch_work(self, work_id: int) -> dict | None:
         """Fetch a work from AO3"""
-        url = f"{self.config.base_url}/{work_id}/a.html"
 
+        url = f"{self.config.base_url}/{work_id}/a.html"
         while True:
             try:
                 response = self.session.get(url)

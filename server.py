@@ -15,7 +15,7 @@ import uvicorn
 
 
 QUEUE_BUMP_SIZE = 30000
-QUEUE_MIN_SIZE = 5000
+QUEUE_MIN_SIZE = 10000
 
 app = FastAPI()
 
