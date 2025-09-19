@@ -104,12 +104,13 @@ def display_progress(data, responses_per_second=0.0):
     print()
 
     # Extract data with the actual field names
-    completed = data['completed']
+    public = data['completed']
     private = data['private']
     remaining = data['remaining']
+    session_completed = data['session_completed']
     progress_percent = data['progress_percent']
 
-    total_processed = completed + private
+    total_processed = public + private
     total_estimated = total_processed + remaining
 
     # STATUS
@@ -127,8 +128,7 @@ def display_progress(data, responses_per_second=0.0):
     print(f"{Colors.BLUE}{'-' * 11}{Colors.RESET}")
     print(f"{Colors.YELLOW}Total processed: {Colors.BRIGHT_WHITE}{format_number(total_processed)}{Colors.RESET}")
     print(f"{Colors.YELLOW}Remaining:       {Colors.BRIGHT_WHITE}{format_number(remaining)}{Colors.RESET}")
-    print()
-
+    print(f"{Colors.YELLOW}Processed this session:{Colors.BRIGHT_WHITE}{format_number(session_completed)}{Colors.RESET}")
     # PROGRESS BAR
     print(f"{Colors.YELLOW}Progress:        {Colors.BRIGHT_WHITE}{progress_percent:.4f}%{Colors.RESET}")
     print(format_progress_bar(total_processed, total_estimated))
@@ -137,7 +137,7 @@ def display_progress(data, responses_per_second=0.0):
     # DATA
     print(f"{Colors.BOLD}{Colors.BLUE}📋 DATA{Colors.RESET}")
     print(f"{Colors.BLUE}{'-' * 7}{Colors.RESET}")
-    print(f"{Colors.GREEN}Public works:{Colors.RESET} {Colors.BRIGHT_WHITE}{format_number(completed)}{Colors.RESET} {Colors.DIM}({format_percentage(completed, total_processed) if total_processed > 0 else '0.00%'}){Colors.RESET}")
+    print(f"{Colors.GREEN}Public works:{Colors.RESET} {Colors.BRIGHT_WHITE}{format_number(public)}{Colors.RESET} {Colors.DIM}({format_percentage(public, total_processed) if total_processed > 0 else '0.00%'}){Colors.RESET}")
     print(f"{Colors.RED}Private works:{Colors.RESET} {Colors.BRIGHT_WHITE}{format_number(private)}{Colors.RESET} {Colors.DIM}({format_percentage(private, total_processed) if total_processed > 0 else '0.00%'}){Colors.RESET}")
 
 def main():
@@ -168,7 +168,7 @@ def main():
 
                     # Track completed count with timestamp
                     current_time = time.time()
-                    completed_count = data.get('completed', 0)
+                    completed_count = data['completed']
                     completed_history.append((current_time, completed_count))
 
                     # Calculate responses per second

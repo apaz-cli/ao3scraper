@@ -76,6 +76,7 @@ class WorkManager:
         self.available_queue = collections.deque()
         self.last_queued_id: int = 0
         self.worker_ips: set[str] = set()  # Track unique worker IPs
+        self.session_completed: int = 0  # Track completed works this session
         self.lock = threading.Lock()
         self.load_completed_work()
 
@@ -190,6 +191,7 @@ class WorkManager:
                     # in this process and if it is killed and restarted, because we know the file was written.
                     self.private.add(work_id)
                     self.assigned.discard(work_id)
+                    self.session_completed += 1
                 except OSError as e:
                     raise Exception(f"Failed to write to private file: {e}")
 
@@ -213,6 +215,7 @@ class WorkManager:
                     # Move from assigned to completed if writes were successful
                     self.completed.add(work_id)
                     self.assigned.discard(work_id)
+                    self.session_completed += 1
             except Exception as e:
                 raise Exception(f"Failed to write work data: {e}")
 
@@ -264,9 +267,9 @@ def submit_private_work(request: Request, work_id: int):
 @app.get("/progress")
 def get_progress():
     """Get current scraping statistics"""
-    total_completed = len(work_manager.completed)
+    total_public = len(work_manager.completed)
     total_private = len(work_manager.private)
-    total_processed = total_completed + total_private
+    total_processed = total_public + total_private
     total_range = config.end_id - config.start_id + 1
     remaining = total_range - total_processed
     disk_usage = get_disk_usage(config.output_dir)
@@ -275,7 +278,7 @@ def get_progress():
     available_queue_size = len(work_manager.available_queue)
 
     return {
-        "completed": total_completed,
+        "public": total_public,
         "private": total_private,
         "total_processed": total_processed,
         "remaining": remaining,
@@ -283,7 +286,8 @@ def get_progress():
         "disk_usage_percent": disk_usage,
         "connected_workers": connected_workers,
         "results_file_size": results_file_size,
-        "available_queue_size": available_queue_size
+        "available_queue_size": available_queue_size,
+        "session_completed": work_manager.session_completed
     }
 
 @app.get("/file-status")
