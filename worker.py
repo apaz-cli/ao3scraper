@@ -6,14 +6,10 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
-class Config:
-    def __init__(self, server_url: str = "http://localhost:8000"):
-        self.server_url = server_url
-        self.base_url = "https://download.archiveofourown.org/downloads"
 
 class AO3Scraper:
-    def __init__(self, config: Config):
-        self.config = config
+    def __init__(self, server_url: str = "http://localhost:8000"):
+        self.server_url = server_url
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -24,7 +20,7 @@ class AO3Scraper:
     def get_work_batch(self, batch_size: int = 100) -> list[int]:
         """Get a batch of work IDs from the server"""
         try:
-            response = self.session.get(f"{self.config.server_url}/work-batch", params={"batch_size": batch_size})
+            response = self.session.get(f"{self.server_url}/work-batch", params={"batch_size": batch_size})
             response.raise_for_status()
             return response.json()["work_ids"]
         except Exception as e:
@@ -34,7 +30,7 @@ class AO3Scraper:
     def submit_completed_work(self, work_data: dict) -> bool:
         """Submit completed work data to the server"""
         try:
-            response = self.session.post(f"{self.config.server_url}/work-completed", json=work_data)
+            response = self.session.post(f"{self.server_url}/work-completed", json=work_data)
             response.raise_for_status()
             return True
         except Exception as e:
@@ -44,7 +40,7 @@ class AO3Scraper:
     def submit_private_work(self, work_id: int) -> bool:
         """Submit private work ID to the server"""
         try:
-            response = self.session.post(f"{self.config.server_url}/work-private", params={"work_id": work_id})
+            response = self.session.post(f"{self.server_url}/work-private", params={"work_id": work_id})
             response.raise_for_status()
             return True
         except Exception as e:
@@ -54,7 +50,7 @@ class AO3Scraper:
     def fetch_work(self, work_id: int) -> dict | None:
         """Fetch a work from AO3"""
 
-        url = f"{self.config.base_url}/{work_id}/a.html"
+        url = f"https://download.archiveofourown.org/downloads/{work_id}/a.html"
         while True:
             try:
                 response = self.session.get(url)
@@ -373,7 +369,7 @@ class AO3Scraper:
 
     def run(self):
         """Main worker loop"""
-        print(f"Starting worker, connecting to server at {self.config.server_url}")
+        print(f"Starting worker, connecting to server at {self.server_url}")
 
         while True:
             # Get a batch of work IDs
@@ -399,20 +395,20 @@ class AO3Scraper:
                         print(f"Failed to submit work {work_id}, will retry later")
 
 def main():
+    # Bump the recursion limit to handle that one AOT fic
+    # that has 500+ span tags in it for no goddamn reason
+    import resource, sys
+    resource.setrlimit(resource.RLIMIT_STACK, (2**29,-1))
+    sys.setrecursionlimit(10**6)
+
     parser = argparse.ArgumentParser(description="AO3 Scraper Worker")
     parser.add_argument('--server', default='localhost', help='Server address (IP or hostname)')
     parser.add_argument('--port', type=int, default=8000, help='Server port')
 
     args = parser.parse_args()
 
-    # Handle server address
-    server_url = f"http://{args.server}:{args.port}"
-
-    config = Config(server_url=server_url)
-    scraper = AO3Scraper(config)
-
     try:
-        scraper.run()
+        AO3Scraper(server_url=f"http://{args.server}:{args.port}").run()
     except KeyboardInterrupt:
         print("\nWorker stopped by user")
     except Exception as e:
