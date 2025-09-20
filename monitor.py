@@ -104,7 +104,7 @@ def display_progress(data, responses_per_second=0.0):
     print()
 
     # Extract data with the actual field names
-    public = data['completed']
+    public = data['public']
     private = data['private']
     remaining = data['remaining']
     session_completed = data['session_completed']
@@ -126,11 +126,11 @@ def display_progress(data, responses_per_second=0.0):
     # PROGRESS
     print(f"{Colors.BOLD}{Colors.BLUE}📈 PROGRESS{Colors.RESET}")
     print(f"{Colors.BLUE}{'-' * 11}{Colors.RESET}")
+    print(f"{Colors.YELLOW}Processed:       {Colors.BRIGHT_WHITE}{format_number(session_completed)}{Colors.RESET}")
     print(f"{Colors.YELLOW}Total processed: {Colors.BRIGHT_WHITE}{format_number(total_processed)}{Colors.RESET}")
-    print(f"{Colors.YELLOW}Remaining:       {Colors.BRIGHT_WHITE}{format_number(remaining)}{Colors.RESET}")
-    print(f"{Colors.YELLOW}Processed this session:{Colors.BRIGHT_WHITE}{format_number(session_completed)}{Colors.RESET}")
+    print(f"{Colors.YELLOW}Total remaining: {Colors.BRIGHT_WHITE}{format_number(remaining)}{Colors.RESET}")
     # PROGRESS BAR
-    print(f"{Colors.YELLOW}Progress:        {Colors.BRIGHT_WHITE}{progress_percent:.4f}%{Colors.RESET}")
+    print(f"{Colors.YELLOW}Total progress:  {Colors.BRIGHT_WHITE}{progress_percent:.4f}%{Colors.RESET}")
     print(format_progress_bar(total_processed, total_estimated))
     print()
 
@@ -168,7 +168,7 @@ def main():
 
                     # Track completed count with timestamp
                     current_time = time.time()
-                    completed_count = data['completed']
+                    completed_count = data['public']
                     completed_history.append((current_time, completed_count))
 
                     # Calculate responses per second
