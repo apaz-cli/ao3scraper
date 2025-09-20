@@ -118,7 +118,7 @@ def display_progress(data, responses_per_second=0.0):
     print(f"{Colors.BLUE}{'-' * 9}{Colors.RESET}")
     print(f"{Colors.YELLOW}Connected workers:     {Colors.BRIGHT_WHITE}{data['connected_workers']}{Colors.RESET}")
     print(f"{Colors.YELLOW}Available queue size:  {Colors.BRIGHT_WHITE}{data['available_queue_size']}{Colors.RESET}")
-    print(f"{Colors.YELLOW}Responses/sec (total): {Colors.BRIGHT_WHITE}{responses_per_second:.2f}{Colors.RESET}")
+    print(f"{Colors.YELLOW}Works/sec (total):     {Colors.BRIGHT_WHITE}{responses_per_second:.2f}{Colors.RESET}")
     print(f"{Colors.YELLOW}Disk usage:            {Colors.BRIGHT_WHITE}{data['disk_usage_percent']}%{Colors.RESET}")
     print(f"{Colors.YELLOW}Results file size:     {Colors.BRIGHT_WHITE}{format_file_size(data['results_file_size'])}{Colors.RESET}")
     print()
