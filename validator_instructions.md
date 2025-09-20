@@ -1,13 +1,14 @@
 
-Lets write a script to valdidate the data we scrape.
+Lets write a script to valdidate scraped data.
+
+We are working with insane amounts of data. Each of these files alone is going to be potentially terabytes large. Larger than is 
+possible to store in memory. You cannot create a set of IDs and not run out of memory either. Do not attempt. The only way for us to 
+process files is to stream them.
 
 # Part 1
-It should take a folder of a mix of jsonl or jsonl.gz files along with the `private.txt` and `public.txt`.
+The script should take a folder of a mix of jsonl or jsonl.gz files along with the `private.txt` and `public.txt`.
 First, validate that all these files are present. That there are some number of `.jsonl`/`.jsonl.gz` files, plus private and public.
 Do not include anything in subfolders, only base level in the cwd.
-
-Each of these files alone is going to be larger than is possible to store in memory. Many many gigabytes. You cannot create a
-set of IDs and not run out of memory either. Do not attempt.
 
 # Part 2
 If the files do not already exist, sort the public and private lists and write them back sorted to disk in the same folder as
@@ -21,15 +22,19 @@ starting from 1 that are not present in either file. Then print the amount of ID
 # Part 4
 For the next step, check if `sorted.flag` exists. If not, skip this step.
 
-we shall read the `.jsonl`/`.jsonl.gz` files. Stream in the lines, and write to a new folder, `sorted_outputs/`,
+We shall read the `.jsonl`/`.jsonl.gz` files. Use the gzip pip package. Stream in the lines, and write to a new folder, `sorted_outputs/`,
 `<start>_<end>.jsonl` files with a range of a hundred thousand IDs each. Append to them (automatically creating them) as you encounter
 new IDs in that range.
 
-Then, sort each jsonl file numerically by ID (they will be stored like `{"id": "3", ...}`), and store to `<start>_<end>_sorted.jsonl`.
-The `"id"` tag always starts the line, so no need to actually decode the json here. Find a way to sort without reading the entire
+Then, sort each jsonl file numerically by `"id"` (they will be stored like `{"id": "3", ...}`), and store to `<start>_<end>_sorted.jsonl`.
+Make sure that each line json decodes properly. Drop the ones that do not. Find a way to sort without reading the entire
 file in at the same time.
 
 Afterwards, delete the unsorted files and `touch sorted.flag`.
+
+# Part 4
+
+Print out the number of lines which failed validation. If any did
 
 # Part 5
 For this step, check if `missing.txt` exists.
