@@ -4,17 +4,6 @@ import sys
 import os
 import re
 
-SERVER_IP = "204.52.25.131" # os.environ.get('SERVER_IP')
-if not SERVER_IP:
-    print("Error: SERVER_IP environment variable required", file=sys.stderr)
-    sys.exit(1)
-
-# Validate IP format (IPv4 or hostname)
-ip_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^localhost$|^[\w.-]+$'
-if not re.match(ip_pattern, SERVER_IP):
-    print(f"Error: Invalid server IP format: {SERVER_IP}", file=sys.stderr)
-    sys.exit(1)
-
 ONE_MINUTE = 60
 FIFTEEN_MINUTES = ONE_MINUTE * 15
 SEVENTEEN_MINUTES = ONE_MINUTE * 17
@@ -33,10 +22,14 @@ playwright_image = modal.Image.debian_slim(python_version="3.10").run_commands(
 )
 
 @app.function(image=playwright_image, timeout=SEVENTEEN_MINUTES)
-def scrape():
-   import os
-   os.system(f"/ao3scraper/.venv/bin/python /ao3scraper/worker.py --server {SERVER_IP}")
+def scrape(server_ip):
+   os.system(f"/ao3scraper/.venv/bin/python /ao3scraper/worker.py --server {server_ip}")
 
 @app.local_entrypoint()
-def main():
-  scrape.remote()
+def main(server_ip):
+    ip_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^localhost$|^[\w.-]+$'
+    if not re.match(ip_pattern, server_ip):
+        print(f"Error: Invalid server IP format: {server_ip}", file=sys.stderr)
+        sys.exit(1)
+
+    scrape.remote(server_ip)
