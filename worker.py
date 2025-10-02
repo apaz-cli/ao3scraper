@@ -92,9 +92,6 @@ class AO3Scraper:
                     continue
 
                 if response.status_code == 503:
-                    if self.die_on_rate_limit:
-                        print(f"ID {work_id}: Service unavailable (503) - Exiting due to --die-on-rate-limit")
-                        raise RateLimitException("Service unavailable, shutting down worker")
                     retry_after = int(response.headers.get('retry-after', 300))
                     print(f"ID {work_id}: Service unavailable (503) - Retrying after {retry_after}s")
                     time.sleep(retry_after)
@@ -121,6 +118,9 @@ class AO3Scraper:
                     "chapters": chapters
                 }
 
+            except RateLimitException:
+                # Re-raise to propagate to run() method
+                raise
             except requests.exceptions.Timeout:
                 print(f"ID {work_id}: Timeout error - Retrying")
                 time.sleep(2)

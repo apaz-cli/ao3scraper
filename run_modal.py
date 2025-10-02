@@ -11,8 +11,10 @@ ONE_HOUR = ONE_MINUTE * 60
 TWO_HOURS = ONE_HOUR * 2
 ONE_DAY = ONE_HOUR * 24
 
+FORCE_REBUILD = True
+
 app = modal.App("AO3 Scraper")
-playwright_image = modal.Image.debian_slim(python_version="3.10").run_commands(
+playwright_image = modal.Image.debian_slim(python_version="3.10", force_build=FORCE_REBUILD).run_commands(
     "apt-get update",
     "apt-get install -y git python3-venv python3-pip",
     "git clone https://github.com/apaz-cli/ao3scraper",
