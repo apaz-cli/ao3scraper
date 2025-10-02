@@ -2,7 +2,6 @@
 import modal
 import sys
 import os
-import re
 
 ONE_MINUTE = 60
 FIFTEEN_MINUTES = ONE_MINUTE * 15
@@ -22,14 +21,16 @@ playwright_image = modal.Image.debian_slim(python_version="3.10").run_commands(
 )
 
 @app.function(image=playwright_image, timeout=SEVENTEEN_MINUTES)
-def scrape(server_ip):
-   os.system(f"/ao3scraper/.venv/bin/python /ao3scraper/worker.py --server {server_ip}")
+def scrape(server, port):
+    os.system(f"/ao3scraper/.venv/bin/python /ao3scraper/worker.py --server {server} --port {port}")
 
 @app.local_entrypoint()
-def main(server_ip):
-    ip_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^localhost$|^[\w.-]+$'
-    if not re.match(ip_pattern, server_ip):
-        print(f"Error: Invalid server IP format: {server_ip}", file=sys.stderr)
+def main():
+    server = os.environ.get("SERVER")
+    port = os.environ.get("PORT", "8000")
+
+    if not server:
+        print("Error: SERVER environment variable not set", file=sys.stderr)
         sys.exit(1)
 
-    scrape.remote(server_ip)
+    scrape.remote(server, port)
