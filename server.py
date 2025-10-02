@@ -292,7 +292,7 @@ def return_work(request: Request, work_id_list_data: WorkIDListData):
     """Return work IDs that were not processed (e.g., due to rate limiting)"""
     if request.client:
         client_ip = request.client.host
-        work_manager.worker_ips.add(client_ip)
+        work_manager.worker_ips.discard(client_ip)
 
     work_ids = work_id_list_data.work_ids
     work_manager.return_work(work_ids)

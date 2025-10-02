@@ -11,7 +11,7 @@ ONE_HOUR = ONE_MINUTE * 60
 TWO_HOURS = ONE_HOUR * 2
 ONE_DAY = ONE_HOUR * 24
 
-FORCE_REBUILD = True
+FORCE_REBUILD = False
 
 app = modal.App("AO3 Scraper")
 playwright_image = modal.Image.debian_slim(python_version="3.10", force_build=FORCE_REBUILD).run_commands(
