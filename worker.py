@@ -20,7 +20,7 @@ class AO3Scraper:
     def get_work_batch(self, batch_size: int = 100) -> list[int]:
         """Get a batch of work IDs from the server"""
         try:
-            response = self.session.get(f"{self.server_url}/work-batch", params={"batch_size": batch_size})
+            response = self.session.post(f"{self.server_url}/work-batch", json={"batch_size": batch_size})
             response.raise_for_status()
             return response.json()["work_ids"]
         except Exception as e:
@@ -40,7 +40,7 @@ class AO3Scraper:
     def submit_private_work(self, work_id: int) -> bool:
         """Submit private work ID to the server"""
         try:
-            response = self.session.post(f"{self.server_url}/work-private", params={"work_id": work_id})
+            response = self.session.post(f"{self.server_url}/work-private", json={"work_id": work_id})
             response.raise_for_status()
             return True
         except Exception as e:
