@@ -56,6 +56,9 @@ class BatchData(BaseModel):
 class WorkIDData(BaseModel):
     work_id: int
 
+class WorkIDListData(BaseModel):
+    work_ids: list[int]
+
 class Config:
     def __init__(self, output_dir: str = "output", start_id: int = 1, end_id: int = 1_000_000_000):
         self.output_dir = output_dir
@@ -181,6 +184,15 @@ class WorkManager:
 
             return pending
 
+    def return_work(self, work_ids: list[int]):
+        """Return work IDs that were not processed, adding them back to the queue"""
+        with self.lock:
+            for work_id in work_ids:
+                # Only add back if not already completed or private
+                if work_id not in self.completed and work_id not in self.private:
+                    self.available_queue.append(work_id)
+                    self.assigned.discard(work_id)
+
     def mark_private(self, work_id: int):
         """Mark work as private and add to private.txt"""
         with self.lock:
@@ -274,6 +286,17 @@ def submit_private_work(request: Request, work_id_data: WorkIDData):
     work_id = work_id_data.work_id
     work_manager.mark_private(work_id)
     return {"status": "success", "message": f"Work {work_id} marked as private"}
+
+@app.post("/return-work")
+def return_work(request: Request, work_id_list_data: WorkIDListData):
+    """Return work IDs that were not processed (e.g., due to rate limiting)"""
+    if request.client:
+        client_ip = request.client.host
+        work_manager.worker_ips.add(client_ip)
+
+    work_ids = work_id_list_data.work_ids
+    work_manager.return_work(work_ids)
+    return {"status": "success", "message": f"Returned {len(work_ids)} work IDs to queue"}
 
 @app.get("/progress")
 def get_progress():
