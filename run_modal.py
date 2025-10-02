@@ -21,7 +21,7 @@ playwright_image = modal.Image.debian_slim(python_version="3.10", force_build=FO
     "ao3scraper/.venv/bin/pip install -r ao3scraper/requirements.txt",
 )
 
-@app.function(image=playwright_image, timeout=FIFTEEN_MINUTES)
+@app.function(image=playwright_image, timeout=THIRTY_MINUTES)
 def scrape(server, port):
     os.system(f"/ao3scraper/.venv/bin/python /ao3scraper/worker.py --server {server} --port {port} --die-on-rate-limit")
 
