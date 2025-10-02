@@ -230,7 +230,7 @@ class WorkManager:
         print("Initiating graceful shutdown...")
         with self.lock:
             print("Files are consistent, see ya later nerd.")
-            exit(0)
+            os.kill(os.getpid(), signal.SIGUSR1)
 
 # Global instances
 config: Config = None # type: ignore
