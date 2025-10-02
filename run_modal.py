@@ -5,7 +5,6 @@ import os
 
 ONE_MINUTE = 60
 FIFTEEN_MINUTES = ONE_MINUTE * 15
-SEVENTEEN_MINUTES = ONE_MINUTE * 17
 THIRTY_MINUTES = ONE_MINUTE * 30
 ONE_HOUR = ONE_MINUTE * 60
 TWO_HOURS = ONE_HOUR * 2
@@ -22,7 +21,7 @@ playwright_image = modal.Image.debian_slim(python_version="3.10", force_build=FO
     "ao3scraper/.venv/bin/pip install -r ao3scraper/requirements.txt",
 )
 
-@app.function(image=playwright_image, timeout=SEVENTEEN_MINUTES)
+@app.function(image=playwright_image, timeout=FIFTEEN_MINUTES)
 def scrape(server, port):
     os.system(f"/ao3scraper/.venv/bin/python /ao3scraper/worker.py --server {server} --port {port} --die-on-rate-limit")
 
