@@ -17,10 +17,9 @@ pip install -r requirements.txt
 ./monitor.py  # In yet another terminal to see your progress
 ```
 
-This will run everything on your local machine. Given enough time it will download all of AO3 to the `output/` folder in `output/results.jsonl`. The other files are there to keep track of progress. The server can resume
-from any point, just ctrl+C and re-run.
+This will run everything on your local machine. Given enough time it will download all of AO3 to the `output/` folder in `output/results.jsonl`. The other files are there to keep track of progress. The server can resume from any point, just ctrl+C and re-run.
 
-But this local setup will be agonizingly slow. You will want to run workers on multiple machines. Probably hundreds, as I have done. It sounds extreme, but this is the most reasonable solution to downloading all of AO3.
+But this local setup will be agonizingly slow. You will want to run workers on multiple machines. Probably hundreds, as I have done. It sounds extreme, but this is the most reasonable solution to downloading all of AO3. We'll get to exactly how to do that later. For now, here are the basic commands.
 
 
 ## Multi-machine usage:
@@ -68,5 +67,28 @@ gunzip results_0.jsonl.gz
 # 🔵 Remove the file from the server to free up space.
 rm ~/results_0.jsonl.gz
 ```
+
+## Shutdown
+I tried my absolute best to ensure that there's no data loss/inconsistency possible when you randomly kill the server. Just ctrl+C does the same thing, but if you want to kill it from elsewhere you can use shutdown.py. See `./shutdown.py --help`.
+
+
+## Modal Swarm
+[Modal.com](https://modal.com/) is a GPU neocloud. I use them for writing and profiling GPU kernels, which is the normal use case. But they also have tiny CPU VMs, and a nice SDK. I know some of the people who run it, and it's very easy to use, and they have a generous free tier. So it's what I used to scale up. The free tier isn't going to get you all of AO3, but it can probably get you through like 6 million IDs or so. 
+
+If you want to use Modal, you can go to their [Getting Started](https://modal.com/apps) page, make an account, and then run:
+
+```
+pip install -r swarm_requirements.txt
+python -m modal setup
+```
+
+The modal setup command will bring you back to the web browser to sign in to the account that you made. Then you should just be able to start the server somewhere that has a public IP (I used a CPU node from Prime Intellect) and run:
+
+```
+./swarm.py <server-ip>
+```
+
+And you should see an insane amount of data flowing in.
+
 
 Godspeed, and happy scraping. Enjoy your smut, you weirdo.

@@ -7,9 +7,17 @@ import requests
 from bs4 import BeautifulSoup
 
 
+class RateLimitException(Exception):
+    """Exception raised when rate limiting is encountered and worker should exit"""
+    pass
+
+
 class AO3Scraper:
-    def __init__(self, server_url: str = "http://localhost:8000"):
+    def __init__(self, server_url: str = "http://localhost:8000", die_on_rate_limit: bool = False):
         self.server_url = server_url
+        self.die_on_rate_limit = die_on_rate_limit
+        self.current_batch: list[int] = []
+        self.processed_ids: set[int] = set()
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -20,9 +28,11 @@ class AO3Scraper:
     def get_work_batch(self, batch_size: int = 100) -> list[int]:
         """Get a batch of work IDs from the server"""
         try:
-            response = self.session.get(f"{self.server_url}/work-batch", params={"batch_size": batch_size})
+            response = self.session.post(f"{self.server_url}/work-batch", json={"batch_size": batch_size})
             response.raise_for_status()
-            return response.json()["work_ids"]
+            batch = response.json()["work_ids"]
+            self.current_batch = batch
+            return batch
         except Exception as e:
             print(f"Error getting work batch: {e}")
             return []
@@ -32,6 +42,7 @@ class AO3Scraper:
         try:
             response = self.session.post(f"{self.server_url}/work-completed", json=work_data)
             response.raise_for_status()
+            self.processed_ids.add(int(work_data['id']))
             return True
         except Exception as e:
             print(f"Error submitting work {work_data.get('id', 'unknown')}: {e}")
@@ -40,11 +51,27 @@ class AO3Scraper:
     def submit_private_work(self, work_id: int) -> bool:
         """Submit private work ID to the server"""
         try:
-            response = self.session.post(f"{self.server_url}/work-private", params={"work_id": work_id})
+            response = self.session.post(f"{self.server_url}/work-private", json={"work_id": work_id})
             response.raise_for_status()
+            self.processed_ids.add(work_id)
             return True
         except Exception as e:
             print(f"Error submitting private work {work_id}: {e}")
+            return False
+
+    def return_unprocessed_work(self) -> bool:
+        """Return unprocessed work IDs to the server"""
+        unprocessed = [wid for wid in self.current_batch if wid not in self.processed_ids]
+        if not unprocessed:
+            return True
+
+        try:
+            response = self.session.post(f"{self.server_url}/return-work", json={"work_ids": unprocessed})
+            response.raise_for_status()
+            print(f"Returned {len(unprocessed)} unprocessed work IDs to server")
+            return True
+        except Exception as e:
+            print(f"Error returning unprocessed work: {e}")
             return False
 
     def fetch_work(self, work_id: int) -> dict | None:
@@ -56,6 +83,9 @@ class AO3Scraper:
                 response = self.session.get(url)
 
                 if response.status_code == 429:
+                    if self.die_on_rate_limit:
+                        print(f"ID {work_id}: Rate limited (429) - Exiting due to --die-on-rate-limit")
+                        raise RateLimitException("Rate limit encountered, shutting down worker")
                     retry_after = int(response.headers.get('retry-after', 300))
                     print(f"ID {work_id}: Rate limited (429) - Retrying after {retry_after}s")
                     time.sleep(retry_after)
@@ -91,6 +121,9 @@ class AO3Scraper:
                     "chapters": chapters
                 }
 
+            except RateLimitException:
+                # Re-raise to propagate to run() method
+                raise
             except requests.exceptions.Timeout:
                 print(f"ID {work_id}: Timeout error - Retrying")
                 time.sleep(2)
@@ -373,29 +406,38 @@ class AO3Scraper:
     def run(self):
         """Main worker loop"""
         print(f"Starting worker, connecting to server at {self.server_url}")
+        die_on_rate_limit_msg = " (die-on-rate-limit enabled)" if self.die_on_rate_limit else ""
+        print(f"Configuration: {die_on_rate_limit_msg}")
 
-        while True:
-            # Get a batch of work IDs
-            work_ids = self.get_work_batch()
+        try:
+            while True:
+                # Get a batch of work IDs
+                work_ids = self.get_work_batch()
 
-            if not work_ids:
-                print("No more work IDs available, sleeping for 30 seconds...")
-                time.sleep(30)
-                continue
+                if not work_ids:
+                    print("No more work IDs available, sleeping for 30 seconds...")
+                    time.sleep(30)
+                    continue
 
-            print(f"Processing batch of {len(work_ids)} works.")
+                print(f"Processing batch of {len(work_ids)} works.")
 
-            for work_id in work_ids:
-                work_data = self.fetch_work(work_id)
+                for work_id in work_ids:
+                    work_data = self.fetch_work(work_id)
 
-                if work_data is None:
-                    # Work is private or not found
-                    self.submit_private_work(work_id)
-                else:
-                    # Work was successfully scraped
-                    success = self.submit_completed_work(work_data)
-                    if not success:
-                        print(f"Failed to submit work {work_id}, will retry later")
+                    if work_data is None:
+                        # Work is private or not found
+                        self.submit_private_work(work_id)
+                    else:
+                        # Work was successfully scraped
+                        success = self.submit_completed_work(work_data)
+                        if not success:
+                            print(f"Failed to submit work {work_id}, will retry later")
+        except RateLimitException as e:
+            print(f"Rate limit exception: {e}")
+            print("Returning unprocessed work to server...")
+            self.return_unprocessed_work()
+            print("Worker shutting down due to rate limiting")
+            return
 
 def main():
     # Bump the recursion limit to handle that one AOT fic
@@ -407,11 +449,16 @@ def main():
     parser = argparse.ArgumentParser(description="AO3 Scraper Worker")
     parser.add_argument('--server', default='localhost', help='Server address (IP or hostname)')
     parser.add_argument('--port', type=int, default=8000, help='Server port')
+    parser.add_argument('--die-on-rate-limit', action='store_true',
+                        help='Exit worker when rate limiting occurs, returning unprocessed work to server')
 
     args = parser.parse_args()
 
     try:
-        AO3Scraper(server_url=f"http://{args.server}:{args.port}").run()
+        AO3Scraper(
+            server_url=f"http://{args.server}:{args.port}",
+            die_on_rate_limit=args.die_on_rate_limit
+        ).run()
     except KeyboardInterrupt:
         print("\nWorker stopped by user")
     except Exception as e:

@@ -50,6 +50,15 @@ class WorkData(BaseModel):
     metadata: dict
     chapters: list[dict]
 
+class BatchData(BaseModel):
+    batch_size: int
+
+class WorkIDData(BaseModel):
+    work_id: int
+
+class WorkIDListData(BaseModel):
+    work_ids: list[int]
+
 class Config:
     def __init__(self, output_dir: str = "output", start_id: int = 1, end_id: int = 1_000_000_000):
         self.output_dir = output_dir
@@ -175,6 +184,15 @@ class WorkManager:
 
             return pending
 
+    def return_work(self, work_ids: list[int]):
+        """Return work IDs that were not processed, adding them back to the queue"""
+        with self.lock:
+            for work_id in work_ids:
+                # Only add back if not already completed or private
+                if work_id not in self.completed and work_id not in self.private:
+                    self.available_queue.append(work_id)
+                    self.assigned.discard(work_id)
+
     def mark_private(self, work_id: int):
         """Mark work as private and add to private.txt"""
         with self.lock:
@@ -224,14 +242,14 @@ class WorkManager:
         print("Initiating graceful shutdown...")
         with self.lock:
             print("Files are consistent, see ya later nerd.")
-            exit(0)
+            os.kill(os.getpid(), signal.SIGUSR1)
 
 # Global instances
 config: Config = None # type: ignore
 work_manager: WorkManager = None # type: ignore
 
-@app.get("/work-batch")
-def get_work_batch(request: Request, batch_size: int = 100):
+@app.post("/work-batch")
+def get_work_batch(request: Request, batch_data: BatchData):
     """Get a batch of work IDs to scrape"""
 
     # Track worker IP
@@ -239,7 +257,10 @@ def get_work_batch(request: Request, batch_size: int = 100):
         client_ip = request.client.host
         work_manager.worker_ips.add(client_ip)
 
-    # Send batch
+    # Validate batch size and send work
+    batch_size = batch_data.batch_size
+    if batch_size < 1 or batch_size > 10000:
+        raise HTTPException(status_code=400, detail="batch_size must be between 1 and 10000")
     return {"work_ids": work_manager.get_work_batch(batch_size)}
 
 @app.post("/work-completed")
@@ -256,13 +277,26 @@ def submit_completed_work(request: Request, work_data: WorkData):
     return {"status": "success", "message": f"Work {int(work_data.id)} saved successfully"}
 
 @app.post("/work-private")
-def submit_private_work(request: Request, work_id: int):
+def submit_private_work(request: Request, work_id_data: WorkIDData):
     """Mark work as private (404 response)"""
     if request.client:
         client_ip = request.client.host
         work_manager.worker_ips.add(client_ip)
+
+    work_id = work_id_data.work_id
     work_manager.mark_private(work_id)
     return {"status": "success", "message": f"Work {work_id} marked as private"}
+
+@app.post("/return-work")
+def return_work(request: Request, work_id_list_data: WorkIDListData):
+    """Return work IDs that were not processed (e.g., due to rate limiting)"""
+    if request.client:
+        client_ip = request.client.host
+        work_manager.worker_ips.discard(client_ip)
+
+    work_ids = work_id_list_data.work_ids
+    work_manager.return_work(work_ids)
+    return {"status": "success", "message": f"Returned {len(work_ids)} work IDs to queue"}
 
 @app.get("/progress")
 def get_progress():
@@ -289,63 +323,6 @@ def get_progress():
         "available_queue_size": available_queue_size,
         "session_completed": work_manager.session_completed
     }
-
-@app.get("/file-status")
-def get_file_status():
-    """Get current results.jsonl file size for datafetch monitoring"""
-    results_file_size = get_file_size(config.results_file)
-    return {
-        "results_file_size": results_file_size,
-        "results_file_path": str(config.results_file)
-    }
-
-@app.post("/rotate-file")
-def rotate_file():
-    """Rotate results.jsonl file and compress it"""
-    with work_manager.lock:
-        try:
-            # Find next available filename
-            counter = 0
-            while True:
-                rotated_name = f"results_{counter}.jsonl"
-                rotated_path = Path(config.output_dir) / rotated_name
-                if not rotated_path.exists():
-                    break
-                counter += 1
-
-             # Rotate and allow any pending writes to complete
-            config.results_file.rename(rotated_path)
-            time.sleep(2)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error rotating file: {str(e)}")
-
-    # Compress the rotated file
-    compressed_path = f"{rotated_path}.gz"
-    subprocess.run(['gzip', '-k', str(rotated_path)], check=True)
-
-    # Return the new compressed filename and path
-    return {
-        "status": "success",
-        "rotated_file": [f"{rotated_name}", f"{rotated_name}.gz"],
-        "compressed_path": compressed_path
-    }
-
-@app.post("/cleanup-file")
-def cleanup_file(filename: str):
-    """Remove a transferred file from the output directory"""
-    try:
-        file_path = Path(config.output_dir) / filename
-        if file_path.exists() and file_path.is_file():
-            # Safety check - only delete .gz files in output dir
-            if filename.endswith('.gz') and file_path.parent == Path(config.output_dir):
-                file_path.unlink()
-                return {"status": "success", "message": f"File {filename} deleted"}
-            else:
-                raise HTTPException(status_code=400, detail="Only .gz files in output directory can be deleted")
-        else:
-            raise HTTPException(status_code=404, detail=f"File {filename} not found")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
 
 @app.post("/shutdown")
 def shutdown_server():
