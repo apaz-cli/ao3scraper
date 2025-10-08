@@ -78,6 +78,9 @@ class AO3Scraper:
 
                 print(f"ID {work_id}: Status: {response.status_code}")
 
+                # Fix encoding - AO3 sends UTF-8 but doesn't declare it in headers
+                response.encoding = 'utf-8'
+
                 # Parse the HTML content
                 title, metadata, chapters = self.parse_html(response.text)
 
