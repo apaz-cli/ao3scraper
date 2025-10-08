@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 
 TARGET_COUNT = 100
-CHECK_INTERVAL = 60  # seconds
+CHECK_INTERVAL = 15  # seconds
 
 
 def shutdown_handler(signum, frame):
