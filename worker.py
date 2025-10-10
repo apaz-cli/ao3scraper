@@ -2,9 +2,17 @@
 import argparse
 import re
 import time
+import hashlib
 from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
+
+
+def compute_worker_hash() -> str:
+    """Compute SHA256 hash of worker.py file"""
+    worker_path = Path(__file__)
+    with open(worker_path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 
 class RateLimitException(Exception):
@@ -18,6 +26,7 @@ class AO3Scraper:
         self.die_on_rate_limit = die_on_rate_limit
         self.current_batch: list[int] = []
         self.processed_ids: set[int] = set()
+        self.worker_hash = compute_worker_hash()
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -28,7 +37,7 @@ class AO3Scraper:
     def get_work_batch(self, batch_size: int = 100) -> list[int]:
         """Get a batch of work IDs from the server"""
         try:
-            response = self.session.post(f"{self.server_url}/work-batch", json={"batch_size": batch_size})
+            response = self.session.post(f"{self.server_url}/work-batch", json={"batch_size": batch_size, "worker_hash": self.worker_hash})
             response.raise_for_status()
             batch = response.json()["work_ids"]
             self.current_batch = batch
@@ -406,6 +415,7 @@ class AO3Scraper:
     def run(self):
         """Main worker loop"""
         print(f"Starting worker, connecting to server at {self.server_url}")
+        print(f"Worker version hash: {self.worker_hash}")
         die_on_rate_limit_msg = " (die-on-rate-limit enabled)" if self.die_on_rate_limit else ""
         print(f"Configuration: {die_on_rate_limit_msg}")
 

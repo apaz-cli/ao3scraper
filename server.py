@@ -8,6 +8,7 @@ import re
 import os
 import time
 import signal
+import hashlib
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
@@ -18,6 +19,12 @@ QUEUE_BUMP_SIZE = 30000
 QUEUE_MIN_SIZE = 10000
 
 app = FastAPI()
+
+def compute_worker_hash() -> str:
+    """Compute SHA256 hash of worker.py file"""
+    worker_path = Path(__file__).parent / "worker.py"
+    with open(worker_path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 def get_disk_usage(path: str) -> int:
     """Get disk usage percentage for the filesystem containing the given path"""
@@ -52,6 +59,7 @@ class WorkData(BaseModel):
 
 class BatchData(BaseModel):
     batch_size: int
+    worker_hash: str
 
 class WorkIDData(BaseModel):
     work_id: int
@@ -247,10 +255,18 @@ class WorkManager:
 # Global instances
 config: Config = None # type: ignore
 work_manager: WorkManager = None # type: ignore
+server_worker_hash: str = "" # type: ignore
 
 @app.post("/work-batch")
 def get_work_batch(request: Request, batch_data: BatchData):
     """Get a batch of work IDs to scrape"""
+
+    # Version check (outside lock)
+    if batch_data.worker_hash != server_worker_hash:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Worker version mismatch. Server hash: {server_worker_hash}, Worker hash: {batch_data.worker_hash}"
+        )
 
     # Track worker IP
     if request.client:
@@ -338,7 +354,7 @@ def shutdown_handler(signum, frame):
         work_manager.shutdown()
 
 def main():
-    global config, work_manager
+    global config, work_manager, server_worker_hash
 
     # Set up signal handlers
     signal.signal(signal.SIGINT, shutdown_handler)
@@ -351,6 +367,10 @@ def main():
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
     parser.add_argument('--port', type=int, default=8000, help='Port to bind to')
     args = parser.parse_args()
+
+    # Compute worker.py hash
+    server_worker_hash = compute_worker_hash()
+    print(f"Worker version hash: {server_worker_hash}")
 
     config = Config(output_dir=args.output, start_id=args.start_id, end_id=args.end_id)
     work_manager = WorkManager(config)
