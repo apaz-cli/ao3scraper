@@ -98,9 +98,10 @@ def display_progress(data, responses_per_second=0.0):
     """Display formatted progress information"""
     clear_screen()
 
-    print(f"{Colors.BOLD}{Colors.CYAN}{'=' * 60}{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.CYAN}           AO3 SCRAPER PROGRESS MONITOR{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.CYAN}{'=' * 60}{Colors.RESET}")
+    #print(f"{Colors.BOLD}{Colors.CYAN}{'=' * 60}{Colors.RESET}")
+    print(f"\n{Colors.BOLD}{Colors.CYAN}🚀 AO3 SCRAPER PROGRESS MONITOR{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.CYAN}{'-' * 31}{Colors.RESET}")
+    #print(f"{Colors.BOLD}{Colors.CYAN}{'=' * 60}{Colors.RESET}")
     print()
 
     # Extract data with the actual field names
