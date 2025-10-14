@@ -25,9 +25,9 @@ playwright_image = modal.Image.debian_slim(python_version="3.10", force_build=FO
 )
 
 @app.function(image=playwright_image, timeout=THIRTY_MINUTES)
-def scrape(server, port):
+def scrape(server, port, batch_size):
     result = subprocess.run(
-        ["/ao3scraper/.venv/bin/python", "/ao3scraper/worker.py", "--server", server, "--port", str(port), "--die-on-rate-limit"],
+        ["/ao3scraper/.venv/bin/python", "/ao3scraper/worker.py", "--server", server, "--port", str(port), "--batch-size", str(batch_size), "--die-on-rate-limit"],
         capture_output=False
     )
 
@@ -38,9 +38,10 @@ def scrape(server, port):
 def main():
     server = os.environ.get("SERVER")
     port = os.environ.get("PORT", "8000")
+    batch_size = os.environ.get("BATCH_SIZE", "100")
 
     if not server:
         print("Error: SERVER environment variable not set", file=sys.stderr)
         sys.exit(1)
 
-    scrape.remote(server, port)
+    scrape.remote(server, port, batch_size)

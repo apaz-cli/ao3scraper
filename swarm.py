@@ -61,20 +61,20 @@ def get_running_count():
         return 0
 
 
-def start_modal_process(server, port):
+def start_modal_process(server, port, batch_size):
     """Start a single Modal process"""
     import os
     process = subprocess.Popen(
         "modal run run_modal.py",
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        env={**os.environ, "SERVER": server, "PORT": str(port)},
+        env={**os.environ, "SERVER": server, "PORT": str(port), "BATCH_SIZE": str(batch_size)},
         shell=True
     )
     return process
 
 
-def start_processes(count, server, port):
+def start_processes(count, server, port, batch_size):
     """Start the specified number of Modal processes"""
     if count <= 0:
         return
@@ -86,7 +86,7 @@ def start_processes(count, server, port):
         for _ in range(count):
             if shutdown_flag.is_set():
                 break
-            future = executor.submit(start_modal_process, server, port)
+            future = executor.submit(start_modal_process, server, port, batch_size)
             futures.append(future)
 
         # Collect successfully started processes
@@ -99,16 +99,17 @@ def start_processes(count, server, port):
         print(f"Successfully started {len(new_processes)} processes")
 
 
-def maintain_processes(server, port):
+def maintain_processes(server, port, batch_size):
     """Main loop to maintain the target number of processes"""
     print(f"Starting Modal Process Manager with target of {TARGET_COUNT} processes")
+    print(f"Configuration: batch_size={batch_size}")
 
     # Initial startup
     current_count = get_running_count()
     print(f"Initial count: {current_count} Modal processes running")
     needed = TARGET_COUNT - current_count
     if needed > 0:
-        start_processes(needed, server, port)
+        start_processes(needed, server, port, batch_size)
 
     # Maintenance loop
     last_check = time.time()
@@ -124,7 +125,7 @@ def maintain_processes(server, port):
                 needed = TARGET_COUNT - current_count
                 if needed > 0:
                     print(f"Need to start {needed} more processes")
-                    start_processes(needed, server, port)
+                    start_processes(needed, server, port, batch_size)
                 elif needed < 0:
                     print(f"Running {-needed} processes over target")
                 else:
@@ -147,6 +148,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Modal Process Manager - Maintains 100 Modal apps running simultaneously')
     parser.add_argument('--server', required=True, help='Server address (IP or hostname)')
     parser.add_argument('--port', type=int, default=8000, help='Server port')
+    parser.add_argument('--batch-size', type=int, default=100, help='Number of work IDs to request per batch (default: 100)')
     args = parser.parse_args()
 
     shutdown_flag = threading.Event()
@@ -155,7 +157,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, shutdown_handler)
 
     try:
-        maintain_processes(args.server, args.port)
+        maintain_processes(args.server, args.port, args.batch_size)
     except KeyboardInterrupt:
         print("Interrupted by user")
     except Exception as e:

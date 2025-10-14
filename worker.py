@@ -24,6 +24,7 @@ class AO3Scraper:
     def __init__(self, server_url: str = "http://localhost:8000", die_on_rate_limit: bool = False):
         self.server_url = server_url
         self.die_on_rate_limit = die_on_rate_limit
+        self.batch_size = 100  # Default batch size
         self.current_batch: list[int] = []
         self.processed_ids: set[int] = set()
         self.worker_hash = compute_worker_hash()
@@ -417,12 +418,12 @@ class AO3Scraper:
         print(f"Starting worker, connecting to server at {self.server_url}")
         print(f"Worker version hash: {self.worker_hash}")
         die_on_rate_limit_msg = " (die-on-rate-limit enabled)" if self.die_on_rate_limit else ""
-        print(f"Configuration: {die_on_rate_limit_msg}")
+        print(f"Configuration: batch_size={self.batch_size}{die_on_rate_limit_msg}")
 
         try:
             while True:
                 # Get a batch of work IDs
-                work_ids = self.get_work_batch()
+                work_ids = self.get_work_batch(self.batch_size)
 
                 if not work_ids:
                     print("No more work IDs available, sleeping for 30 seconds...")
@@ -460,16 +461,19 @@ def main():
     parser = argparse.ArgumentParser(description="AO3 Scraper Worker")
     parser.add_argument('--server', default='localhost', help='Server address (IP or hostname)')
     parser.add_argument('--port', type=int, default=8000, help='Server port')
+    parser.add_argument('--batch-size', type=int, default=100, help='Number of work IDs to request per batch (default: 100)')
     parser.add_argument('--die-on-rate-limit', action='store_true',
                         help='Exit worker when rate limiting occurs, returning unprocessed work to server')
 
     args = parser.parse_args()
 
     try:
-        AO3Scraper(
+        scraper = AO3Scraper(
             server_url=f"http://{args.server}:{args.port}",
             die_on_rate_limit=args.die_on_rate_limit
-        ).run()
+        )
+        scraper.batch_size = args.batch_size
+        scraper.run()
     except KeyboardInterrupt:
         print("\nWorker stopped by user")
     except Exception as e:
