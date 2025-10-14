@@ -2,6 +2,9 @@
 import modal
 import sys
 import os
+import subprocess
+
+from modal.experimental import stop_fetching_inputs
 
 ONE_MINUTE = 60
 FIFTEEN_MINUTES = ONE_MINUTE * 15
@@ -23,7 +26,13 @@ playwright_image = modal.Image.debian_slim(python_version="3.10", force_build=FO
 
 @app.function(image=playwright_image, timeout=THIRTY_MINUTES)
 def scrape(server, port):
-    os.system(f"/ao3scraper/.venv/bin/python /ao3scraper/worker.py --server {server} --port {port} --die-on-rate-limit")
+    result = subprocess.run(
+        ["/ao3scraper/.venv/bin/python", "/ao3scraper/worker.py", "--server", server, "--port", str(port), "--die-on-rate-limit"],
+        capture_output=False
+    )
+
+    if result.returncode == 42:
+        stop_fetching_inputs()
 
 @app.local_entrypoint()
 def main():

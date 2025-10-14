@@ -447,7 +447,8 @@ class AO3Scraper:
             print("Returning unprocessed work to server...")
             self.return_unprocessed_work()
             print("Worker shutting down due to rate limiting")
-            return
+            import sys
+            sys.exit(42)  # Special exit code to indicate rate limit shutdown
 
 def main():
     # Bump the recursion limit to handle that one AOT fic
