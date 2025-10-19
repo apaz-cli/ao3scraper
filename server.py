@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 import uvicorn
+from rangeset import RangeSet
 
 
 QUEUE_BUMP_SIZE = 30000
@@ -86,49 +87,53 @@ class Config:
 class WorkManager:
     def __init__(self, config: Config):
         self.config = config
-        self.completed: set[int] = set()
-        self.private: set[int] = set()
+        self.completed = RangeSet()
+        self.private = RangeSet()
+        self.available = RangeSet()
         self.assigned: set[int] = set()
-        self.next_id: int = 0
         self.available_queue = collections.deque()
-        self.last_queued_id: int = 0
-        self.worker_ips: set[str] = set()  # Track unique worker IPs
-        self.session_completed: int = 0  # Track completed works this session
+        self.worker_ips: set[str] = set()
+        self.session_completed: int = 0
         self.lock = threading.Lock()
         self.load_completed_work()
 
     def load_completed_work(self):
         """Load completed work IDs from public.txt and private.txt"""
         print("Loading completed work IDs...")
+        completed_ids = []
         if self.config.public_file.exists():
             with open(self.config.public_file, 'r') as f:
                 for line in f:
                     line = line.strip()
                     if line:
                         try:
-                            self.completed.add(int(line))
+                            completed_ids.append(int(line))
                         except ValueError:
                             pass
+        self.completed = RangeSet.from_values(completed_ids)
+        del completed_ids
 
         print("Loading private work IDs...")
+        private_ids = []
         if self.config.private_file.exists():
             with open(self.config.private_file, 'r') as f:
                 for line in f:
                     line = line.strip()
                     if line:
                         try:
-                            self.private.add(int(line))
+                            private_ids.append(int(line))
                         except ValueError:
                             pass
+        self.private = RangeSet.from_values(private_ids)
+        del private_ids
 
-        # Find the next ID to assign based on completed/private work
-        print("Determining next work ID offset...")
-        self.next_id = self.config.start_id
-        while self.next_id in self.completed or self.next_id in self.private:
-            self.next_id += 1
+        # Compute available IDs (one-time expensive operation)
+        print("Computing available work IDs...")
+        excluded = self.completed | self.private
+        self.available = excluded.filter_range(self.config.start_id, self.config.end_id)
+        self.available = RangeSet.from_values(self.available)
 
-        # Initialize queue tracking
-        self.last_queued_id = self.next_id - 1
+        print(f"Available work IDs: {len(self.available)} works")
 
         # Start background queue manager
         self.queue_thread = threading.Thread(target=self._queue_manager, daemon=True)
@@ -141,35 +146,21 @@ class WorkManager:
                 # Quick status check
                 with self.lock:
                     queue_size = len(self.available_queue)
-                    can_generate = self.last_queued_id < self.config.end_id
+                    has_available = len(self.available) > 0
 
                 # Populate queue if it needs to be filled
                 added = False
-                if queue_size < QUEUE_MIN_SIZE and can_generate:
-
-                    # Snapshot current state. Copying the exclusion sets is expensive but necessary.
+                if queue_size < QUEUE_MIN_SIZE and has_available:
                     with self.lock:
-                        last_id = self.last_queued_id
-                        not_finished = last_id < self.config.end_id
-                        if not_finished:
-                            start_id = self.last_queued_id + 1
-                            end_id = min(start_id + QUEUE_BUMP_SIZE - 1, self.config.end_id)
-                            excluded_ids = self.completed | self.private | self.assigned
+                        # Pop IDs from available ranges
+                        new_ids = self.available.pop_front(QUEUE_BUMP_SIZE)
+                        # Remove assigned IDs (small set, cheap)
+                        new_ids = [id for id in new_ids if id not in self.assigned]
 
-                    if not_finished:
-                        # Generate candidates outside lock
-                        new_ids = set(range(start_id, end_id + 1)) - excluded_ids
-
-                        # Add the new IDs to the queue. Lock for this.
-                        with self.lock:
-                            # This could actually add work that is already in a worker's queue, or is already done.
-                            # That is fine, because when the work comes back as completed subsequent times
-                            # it will not be appended to the files because it will be in the completed set.
+                        if new_ids:
                             self.available_queue.extend(new_ids)
-                            self.last_queued_id = end_id
-
-                        print(f"Added {len(new_ids)} IDs to queue, starting from {start_id}.")
-                        added = len(new_ids) > 0
+                            print(f"Added {len(new_ids)} IDs to queue.")
+                            added = True
 
                 # Sleep if nothing was added to avoid busy loop
                 if not added:
@@ -216,6 +207,7 @@ class WorkManager:
                     # This will cause it to be skipped by subsequent calls to mark_private,
                     # in this process and if it is killed and restarted, because we know the file was written.
                     self.private.add(work_id)
+                    self.available.discard(work_id)
                     self.assigned.discard(work_id)
                     self.session_completed += 1
                 except OSError as e:
@@ -240,6 +232,7 @@ class WorkManager:
 
                     # Move from assigned to completed if writes were successful
                     self.completed.add(work_id)
+                    self.available.discard(work_id)
                     self.assigned.discard(work_id)
                     self.session_completed += 1
             except Exception as e:
