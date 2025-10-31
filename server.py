@@ -19,6 +19,8 @@ from rangeset import RangeSet
 QUEUE_BUMP_SIZE = 30000
 QUEUE_MIN_SIZE = 10000
 
+MAX_AO3_ID = 73445071
+
 app = FastAPI()
 
 def compute_worker_hash() -> str:
@@ -356,7 +358,7 @@ def main():
     parser = argparse.ArgumentParser(description="AO3 Scraper Server")
     parser.add_argument('--output', default='output', help='Output directory')
     parser.add_argument('--start-id', type=int, default=1, help='Starting ID')
-    parser.add_argument('--end-id', type=int, default=72_000_000, help='Ending ID')
+    parser.add_argument('--end-id', type=int, default=MAX_AO3_ID, help='Ending ID')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
     parser.add_argument('--port', type=int, default=8000, help='Port to bind to')
     args = parser.parse_args()
